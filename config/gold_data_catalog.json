@@ -1,0 +1,71 @@
+{
+  "instrument": "XAUUSD",
+  "scope": "gold_research",
+  "datasets": [
+    {
+      "id": "gold_ohlcv",
+      "category": "market_data",
+      "description": "Historical gold OHLCV at multiple native timeframes",
+      "priority": 1,
+      "status": "partial",
+      "required_fields": ["timestamp", "open", "high", "low", "close", "volume"],
+      "target_timeframes": ["tick", "1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"]
+    },
+    {
+      "id": "gold_bid_ask",
+      "category": "execution_data",
+      "description": "Historical bid, ask and spread data where available",
+      "priority": 2,
+      "status": "not_acquired",
+      "required_fields": ["timestamp", "bid", "ask"]
+    },
+    {
+      "id": "economic_releases",
+      "category": "macro",
+      "description": "CPI, core CPI, PCE, employment, GDP, PMI and other releases",
+      "priority": 1,
+      "status": "not_acquired",
+      "required_fields": ["event", "scheduled_at", "released_at", "actual", "forecast", "previous", "source"]
+    },
+    {
+      "id": "central_banks",
+      "category": "macro",
+      "description": "Fed decisions, statements, minutes, speeches and rate expectations",
+      "priority": 2,
+      "status": "not_acquired",
+      "required_fields": ["timestamp", "event_type", "content", "source"]
+    },
+    {
+      "id": "news",
+      "category": "news",
+      "description": "Timestamped historical financial news and geopolitical events",
+      "priority": 2,
+      "status": "not_acquired",
+      "required_fields": ["published_at", "headline", "source"]
+    },
+    {
+      "id": "cross_market",
+      "category": "correlations",
+      "description": "DXY or dollar proxies, Treasury yields, real yields, rates and relevant indices",
+      "priority": 1,
+      "status": "not_acquired",
+      "required_fields": ["timestamp", "symbol", "close"]
+    },
+    {
+      "id": "technical_features",
+      "category": "derived_features",
+      "description": "Indicators, returns, volatility, momentum and multi-timeframe features",
+      "priority": 2,
+      "status": "not_built",
+      "required_fields": ["timestamp", "feature_name", "value"]
+    },
+    {
+      "id": "smc_ict_features",
+      "category": "derived_features",
+      "description": "Swings, BOS, CHoCH, liquidity sweeps, FVGs, order blocks, PDH and PDL",
+      "priority": 2,
+      "status": "not_built",
+      "required_fields": ["timestamp", "feature_name", "value", "definition_version"]
+    }
+  ]
+}
