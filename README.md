@@ -188,7 +188,9 @@ importer does not invent candles or automatically repair invalid rows.
 ### 2026-10-29 — Historical ingestion layer
 
 - Implemented CSV column alias mapping and UTC timestamp normalization.
-- Added row validation, duplicate detection, input-order auditing, and gap
-  reporting.
+- Added row validation, duplicate detection, input-order auditing, and gap reporting.
 - Added normalized CSV and JSON audit report outputs.
-- **Status:** pending test execution and review before marking complete.
+- Installed the timezone database dependency required for named timezones.
+- Verified all 14 project tests pass.
+- Imported 500 synthetic XAUUSD candles: all accepted, with zero detected issues.
+- Real historical dataset validation remains pending.
