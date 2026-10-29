@@ -194,3 +194,13 @@ importer does not invent candles or automatically repair invalid rows.
 - Verified all 14 project tests pass.
 - Imported 500 synthetic XAUUSD candles: all accepted, with zero detected issues.
 - Real historical dataset validation remains pending.
+
+### 2026-10-29 — Session-aware data quality audit
+
+- Added a separate audit module for classifying gaps against regular XAUUSD weekly trading hours.
+- Used the America/New_York timezone to account for daylight-saving transitions.
+- Classified 23 gaps: 20 expected-closure candidates, 2 unexpected trading gaps, and 1 mixed gap.
+- Identified 27 potentially unexpected missing trading minutes.
+- Preserved the original normalized dataset; no candles were fabricated.
+- Historical holiday schedules and exceptional provider sessions remain unmodelled.
+- Added automated tests for session boundaries, timezone handling, and gap classification.
