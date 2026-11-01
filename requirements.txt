@@ -1,4 +1,17 @@
+# Direct runtime dependencies. Exact versions of everything are in requirements-lock.txt.
 tzdata>=2025.2
-pandas>=2.2
-pyarrow>=17.0
-duckdb>=1.4.0
+pandas>=3.1
+numpy>=2.5
+pyarrow>=26.0
+duckdb>=2.0
+scipy>=1.18
+statsmodels>=0.15
+scikit-learn>=1.9
+joblib>=1.6
+fastapi>=0.162
+uvicorn[standard]>=0.54
+keyring>=25.7
+MetaTrader5>=5.0.6231; sys_platform == "win32"
+# Tests
+pytest>=9.2
+httpx>=0.28
