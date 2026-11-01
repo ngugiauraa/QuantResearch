@@ -136,3 +136,11 @@ def test_attach_cross_uses_only_closed_cross_bars(tmp_path):
     # At 10:05 only the 09:00 bar (closed 10:00) has finished.
     assert out.xagusd_close.iloc[0] == 10.0
     assert out.missing_close.isna().all()
+
+
+@pytest.mark.parametrize("unit", ["s", "ms", "us", "ns"])
+def test_event_proximity_is_right_across_time_units(unit):
+    # Regression: real data gave 289 million hours because units differed between the two columns.
+    times = pd.Series(pd.to_datetime(["2024-01-01 00:00"], utc=True)).astype("datetime64[us, UTC]")
+    schedule = pd.Series(pd.to_datetime(["2024-01-02 00:00"], utc=True)).astype(f"datetime64[{unit}, UTC]")
+    assert store.event_proximity(times, schedule).iloc[0] == pytest.approx(24)

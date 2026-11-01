@@ -82,7 +82,7 @@ def check(execution: pd.DataFrame, signal_bars: pd.DataFrame, strategy_factory: 
     full_engine = Engine(execution, full_features, strategy_factory(), config, risk_gate=risk_gate)
     full_engine.run(until=cutoff)
     # Show the strategy any signal bar closing exactly at T, as the truncated run's ending does.
-    full_engine._fire_signals(cutoff.value)
+    full_engine._fire_signals(cutoff.as_unit("ns").value)
 
     # Truncated run: nothing after T exists.
     # A quote has no duration, so it is known at its own time. A bar is known when it closes.

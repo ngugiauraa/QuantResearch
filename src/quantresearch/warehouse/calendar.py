@@ -42,7 +42,11 @@ def easter(year: int) -> date:
 
 
 def closed_holidays(year: int) -> set[date]:
-    return {date(year, 1, 1), date(year, 12, 25), easter(year) - timedelta(days=2)}
+    days = {date(year, 1, 1), date(year, 12, 25), easter(year) - timedelta(days=2)}
+    # When Christmas falls on a Saturday the market closes on the Friday, as 2021-12-24 shows in the data.
+    if date(year, 12, 25).weekday() == 5:
+        days.add(date(year, 12, 24))
+    return days
 
 
 def is_trading_weekday(day: date) -> bool:

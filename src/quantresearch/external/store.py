@@ -108,19 +108,14 @@ def event_proximity(times: pd.Series, schedule: pd.Series) -> pd.Series:
     """Hours to the next scheduled event. A published calendar is knowable in advance."""
     if schedule is None or len(schedule) == 0:
         return pd.Series(np.nan, index=times.index)
-    grid = np.sort(pd.DatetimeIndex(schedule).asi8)
-    now = pd.DatetimeIndex(times).asi8
+    # Both sides are converted to nanoseconds: pandas columns can differ in time unit.
+    grid = np.sort(pd.DatetimeIndex(schedule).as_unit("ns").asi8)
+    now = pd.DatetimeIndex(times).as_unit("ns").asi8
     pos = np.searchsorted(grid, now, side="left")
     out = np.full(len(now), np.nan)
     has_next = pos < len(grid)
-    out[has_next] = (grid[pos[has_next]] - now[has_next]) / 3.6e12 / _time_scale(times)
+    out[has_next] = (grid[pos[has_next]] - now[has_next]) / 3.6e12
     return pd.Series(out, index=times.index)
-
-
-def _time_scale(times: pd.Series) -> float:
-    """DatetimeIndex.asi8 units differ by resolution; express hours consistently."""
-    unit = pd.DatetimeIndex(times).unit
-    return {"s": 1e-9, "ms": 1e-6, "us": 1e-3, "ns": 1.0}[unit]
 
 
 def main() -> None:

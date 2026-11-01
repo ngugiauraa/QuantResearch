@@ -215,7 +215,9 @@ class Engine:
         self.is_ticks = "bid" in execution.columns and "bid_open" not in execution.columns
         self._load(execution)
         self.signals = signals if signals is not None else execution.iloc[0:0]
-        self._signal_close = (pd.DatetimeIndex(self.signals["close_ts"]).asi8 if len(self.signals)
+        # All clock comparisons use nanoseconds. Pandas keeps per-column units (us, ms, ns), so comparing
+        # raw integers across columns without this would silently put events in the wrong order.
+        self._signal_close = (pd.DatetimeIndex(self.signals["close_ts"]).as_unit("ns").asi8 if len(self.signals)
                               else np.empty(0, dtype="int64"))
         self._signal_stamps = pd.DatetimeIndex(self.signals["close_ts"]) if len(self.signals) else None
         self.signal_index = -1
@@ -236,7 +238,7 @@ class Engine:
 
     # ------------------------------------------------------------ data
     def _load(self, df: pd.DataFrame) -> None:
-        self._ts = pd.DatetimeIndex(df["ts"])
+        self._ts = pd.DatetimeIndex(df["ts"]).as_unit("ns")
         self._n = len(df)
         if self.is_ticks:
             bid, ask = df["bid"].to_numpy(float), df["ask"].to_numpy(float)
@@ -499,7 +501,7 @@ class Engine:
                     self._close(pos, (bo - slip) if pos.side > 0 else (ao + slip), reason, i)
 
     def run(self, until: pd.Timestamp | None = None) -> "Engine":
-        limit = None if until is None else pd.Timestamp(until).value
+        limit = None if until is None else pd.Timestamp(until).as_unit("ns").value
         while not self.finished:
             if limit is not None and self._ts.asi8[self.cursor] >= limit:
                 break

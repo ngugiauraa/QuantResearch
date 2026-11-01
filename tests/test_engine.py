@@ -271,3 +271,27 @@ def test_equity_metrics_hand_calculation():
     assert s["max_drawdown_usd"] == pytest.approx(11)
     assert s["total_return"] == pytest.approx(0.21)
     assert s["recovery_factor"] == pytest.approx(21 / 11)
+
+
+@pytest.mark.parametrize("unit", ["s", "ms", "us", "ns"])
+def test_clock_is_correct_when_time_units_differ_between_columns(unit):
+    # Regression: raw integer comparison across pandas time units put events in the wrong order.
+    exec_bars = bars([FLAT] * 6)
+    signals = bars([FLAT] * 6)
+    signals["close_ts"] = signals["close_ts"].astype(f"datetime64[{unit}, UTC]")
+    exec_bars["ts"] = exec_bars["ts"].astype("datetime64[us, UTC]")
+    seen = []
+
+    class Rec(Strategy):
+        def on_bar(self, ctx):
+            seen.append((ctx.index, ctx._e.cursor))
+
+    Engine(exec_bars, signals, Rec()).run()
+    assert seen[:3] == [(0, 1), (1, 2), (2, 3)]
+
+
+def test_run_until_stops_at_the_right_time_whatever_the_unit():
+    b = bars([FLAT] * 10)
+    b["ts"] = b["ts"].astype("datetime64[us, UTC]")
+    e = Engine(b, b, Strategy()).run(until=pd.Timestamp("2024-01-02 10:03", tz="UTC"))
+    assert e.cursor == 3
