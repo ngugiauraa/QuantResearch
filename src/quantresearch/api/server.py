@@ -328,7 +328,8 @@ def create_app(services: Services | None = None) -> FastAPI:
 
     @app.post("/api/research/reindex")
     def reindex():
-        count = svc.knowledge.ingest_documentation() + svc.knowledge.ingest_reports(svc.p.research / "reports") + svc.knowledge.ingest_model_cards(svc.models.rows())
+        count = (svc.knowledge.ingest_documentation() + svc.knowledge.ingest_reports(svc.p.research / "reports")
+                 + svc.knowledge.ingest_model_cards(svc.models.rows()) + svc.knowledge.ingest_folder(svc.p.research / "library"))
         return {"indexed": count, "counts": svc.knowledge.count()}
 
     # ------------------------------------------------------------ machine learning

@@ -84,11 +84,22 @@ def purged_folds(frame: pd.DataFrame, label_end: pd.Series, n_folds: int = 5, mi
 
 
 def candidates(seed: int = 19) -> dict:
+    """A small hyperparameter grid across the baseline families. Every variant is scored by walk-forward only,
+    and each one tried is another chance of a lucky winner, so the promotion gate stays strict."""
+    def logistic(c):
+        return make_pipeline(SimpleImputer(strategy="median"), StandardScaler(), LogisticRegression(max_iter=500, C=c))
+
+    def forest(depth):
+        return make_pipeline(SimpleImputer(strategy="median"), RandomForestClassifier(
+            n_estimators=120, max_depth=depth, min_samples_leaf=100, n_jobs=3, random_state=seed))
+
+    def boost(depth, rate, rounds):
+        return HistGradientBoostingClassifier(max_depth=depth, learning_rate=rate, max_iter=rounds, min_samples_leaf=100, random_state=seed)
+
     return {
-        "logistic": make_pipeline(SimpleImputer(strategy="median"), StandardScaler(), LogisticRegression(max_iter=500, C=0.1)),
-        "random_forest": make_pipeline(SimpleImputer(strategy="median"), RandomForestClassifier(
-            n_estimators=120, max_depth=6, min_samples_leaf=100, n_jobs=3, random_state=seed)),
-        "gradient_boosting": HistGradientBoostingClassifier(max_depth=3, learning_rate=0.05, max_iter=150, min_samples_leaf=100, random_state=seed),
+        "logistic": logistic(0.1), "logistic_c0.01": logistic(0.01),
+        "random_forest": forest(6), "random_forest_d3": forest(3),
+        "gradient_boosting": boost(3, 0.05, 150), "gradient_boosting_slow": boost(2, 0.02, 200),
     }
 
 
@@ -124,14 +135,27 @@ def evaluate(frame: pd.DataFrame, labels: pd.DataFrame, columns: list[str], n_fo
     return results
 
 
+MIN_LOG_LOSS_GAIN = 0.001  # A smaller average gain is indistinguishable from noise in these sample sizes.
+MIN_FOLD_WIN_SHARE = 0.75
+
+
 def best_model(results: dict) -> tuple[str, bool]:
-    """The best by log loss, and whether it beat the constant. Beating the baseline is not assumed."""
-    baseline = results["baseline_constant"]["log_loss"]
+    """The best by log loss, and whether it really beat the constant.
+
+    A tiny average edge is not enough: an early version promoted a model that gained 0.0002, won 2 of 4 folds and
+    was right 46.7 % of the time on the holdout. It must gain materially AND win in most folds.
+    """
+    baseline = results["baseline_constant"]
     ranked = sorted(((k, v["log_loss"]) for k, v in results.items() if k != "baseline_constant" and v["log_loss"] is not None), key=lambda x: x[1])
-    if not ranked:
+    if not ranked or baseline["log_loss"] is None:
         return "baseline_constant", False
     name, loss = ranked[0]
-    return name, bool(baseline is not None and loss < baseline)
+    gain_ok = baseline["log_loss"] - loss >= MIN_LOG_LOSS_GAIN
+    model_folds, base_folds = results[name].get("folds", []), baseline.get("folds", [])
+    if model_folds and len(model_folds) == len(base_folds):
+        wins = sum(m["log_loss"] < b["log_loss"] for m, b in zip(model_folds, base_folds))
+        return name, bool(gain_ok and wins / len(model_folds) >= MIN_FOLD_WIN_SHARE)
+    return name, bool(gain_ok)
 
 
 def select_features(frame: pd.DataFrame, labels: pd.DataFrame, columns: list[str], keep: int = 15, seed: int = 19) -> list[str]:
@@ -150,6 +174,45 @@ def select_features(frame: pd.DataFrame, labels: pd.DataFrame, columns: list[str
     result = permutation_importance(model, x.iloc[later], target.iloc[later].astype(int), n_repeats=2, random_state=seed, scoring="neg_log_loss")
     order = np.argsort(result.importances_mean)[::-1]
     return [columns[i] for i in order[:keep]]
+
+
+def strategy_condition_labels(frame: pd.DataFrame, trades: pd.DataFrame) -> pd.DataFrame:
+    """Meta-labels: for each strategy trade, did it make money? Rows are the bars where the decision was made.
+
+    This asks 'when does this strategy work?', not 'where is price going?'. A row's label is only known at the
+    trade's exit, which is recorded so purging removes it from training until then.
+    """
+    label = pd.Series(np.nan, index=frame.index, dtype="float64")
+    end = pd.Series(np.arange(len(frame)), index=frame.index, dtype="int64")
+    if trades.empty:
+        return pd.DataFrame({"label": label, "label_end": end})
+    closes = pd.DatetimeIndex(frame["close_ts"]).as_unit("ns")
+    entries = pd.DatetimeIndex(pd.to_datetime(trades["entry_time"], utc=True)).as_unit("ns")
+    exits = pd.DatetimeIndex(pd.to_datetime(trades["exit_time"], utc=True)).as_unit("ns")
+    for entry, finish, net in zip(entries, exits, trades["net"]):
+        decision = closes.searchsorted(entry, side="right") - 1
+        if decision >= 0:
+            label.iloc[decision] = float(net > 0)
+            end.iloc[decision] = min(len(frame) - 1, int(closes.searchsorted(finish, side="left")))
+    return pd.DataFrame({"label": label, "label_end": end})
+
+
+def evaluate_strategy_conditions(frame: pd.DataFrame, trades: pd.DataFrame, n_folds: int = 3) -> dict:
+    """Walk-forward test of whether market conditions predict a strategy's trade outcomes."""
+    prepared = add_calendar(frame)
+    labels = strategy_condition_labels(prepared, trades)
+    rows = labels["label"].notna().to_numpy()
+    columns = [c for c in FEATURE_SET if c in prepared and prepared[c].notna().any()]
+    subset, sub_labels = prepared[rows].reset_index(drop=True), labels[rows].reset_index(drop=True)
+    # Positions in the labelled subset, so purging compares like with like.
+    original = np.flatnonzero(rows)
+    sub_labels["label_end"] = np.searchsorted(original, sub_labels["label_end"].to_numpy(), side="right")
+    if len(subset) < 300:
+        return {"trades": int(len(subset)), "tested": False, "reason": "fewer than 300 labelled trades"}
+    results = evaluate(subset, sub_labels, columns, n_folds)
+    name, beats = best_model(results)
+    return {"trades": int(len(subset)), "tested": True, "win_rate": float(sub_labels["label"].mean()), "best": name, "beats_baseline": beats,
+            "baseline_log_loss": results["baseline_constant"]["log_loss"], "best_log_loss": results[name]["log_loss"], "best_auc": results[name]["auc"]}
 
 
 @dataclass

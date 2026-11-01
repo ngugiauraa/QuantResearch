@@ -151,6 +151,54 @@ def integrity(spec: ExperimentSpec, frame_builder, bars: pd.DataFrame, cutoff, m
     return lookahead.check(bars, bars, Wrapped, cutoff, config=EngineConfig(initial_equity=spec.initial_equity, costs=CostModel(**spec.costs)), featurize=featurize)
 
 
+def holdout_comparison(start: str, end: str | None = None, fit_end: str | None = None, out: str | None = None) -> list[dict]:
+    """Same period, same observed costs: each engine alone, then combinations, skill gates and an ML veto.
+
+    Run once on the holdout. Any result here is one look at one period, not evidence of a lasting edge.
+    """
+    from quantresearch.core.config import paths
+    from quantresearch.research.experiment import load_research_frame
+    from quantresearch.strategies import REGISTRY
+
+    defn = get("stat_arb")  # Its frame carries every cross-market column the others could need.
+    frame = load_research_frame(defn, None, end)
+    registry = ml.ModelRegistry()
+    # The veto is measured with the newest model even if it was not promoted, and labelled so.
+    rows_ = registry.rows()
+    promoted = registry.promoted()
+    model = promoted or (registry.load(rows_[0]["id"]) if rows_ else None)
+    window = frame[frame["ts"] >= pd.Timestamp(start, tz="UTC")].reset_index(drop=True)
+    specs = [ExperimentSpec(name=name, strategies=[name], use_risk_engine=False) for name in REGISTRY]
+    all_names = [n for n in REGISTRY if n != "behavioral"]  # Behavioral signals on M15, this comparison is on H1.
+    specs = [s for s in specs if s.name in all_names]
+    specs += [
+        ExperimentSpec(name="all_majority", strategies=all_names, conflict="majority", use_risk_engine=False),
+        ExperimentSpec(name="all_two_votes", strategies=all_names, conflict="majority", min_votes=2, use_risk_engine=False),
+        ExperimentSpec(name="trend_with_gates", strategies=["trend"], skills=["fomc_block", "wide_spread_block"], use_risk_engine=False),
+        ExperimentSpec(name="all_majority_risk_engine", strategies=all_names, conflict="majority", use_risk_engine=True),
+    ]
+    if model is not None:
+        label = "all_majority_ml_veto" if promoted is not None else "all_majority_ml_veto_unpromoted_model"
+        specs.append(ExperimentSpec(name=label, strategies=all_names, conflict="majority", use_ml=True, use_risk_engine=False))
+    # Seasonal cells are chosen on data before the holdout only, by fitting on the full frame's earlier part.
+    rows = []
+    for spec in specs:
+        for name in spec.strategies:
+            defn_item = get(name)
+            if defn_item.fit is not None:
+                pre = frame[frame["ts"] < pd.Timestamp(fit_end or start, tz="UTC")]
+                spec.params.setdefault(name, defn_item.fit(pre, defn_item.defaults))
+        result = run_experiment(spec, window, model=model if spec.use_ml else None, fit_end=fit_end or start)
+        r = result["report"]
+        rows.append({"name": spec.name, "trades": r.get("trades", 0), "net_profit": r.get("net_profit", 0.0), "sharpe": r.get("sharpe"), "max_drawdown": r.get("max_drawdown"),
+                     "profit_factor": r.get("profit_factor"), "expectancy": r.get("expectancy"), "win_rate": r.get("win_rate"), "decisions": result["decision_counts"], "digest": result["digest"]})
+        print(json.dumps(rows[-1], default=str), flush=True)
+    target = paths().research / "reports" / "holdout_comparison.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps({"start": start, "end": end, "model": None if model is None else model.name, "rows": rows}, indent=1, default=str), encoding="utf-8")
+    return rows
+
+
 def pre_trade_check(m5: pd.DataFrame, plan: dict, when, spread: float = 0.0, replays: int = 2000) -> dict:
     """The Outcome Simulator as a pre-trade step, using only sessions before `when`."""
     from quantresearch.skills import outcome

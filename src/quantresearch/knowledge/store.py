@@ -106,6 +106,23 @@ class KnowledgeBase:
             count += 2
         return count
 
+    def ingest_folder(self, folder: Path | None = None) -> int:
+        """Your own literature and notes: text files in data/research/library/<kind>/.
+
+        The folder name says what kind of evidence a file is, so a paper's claim stays labelled and nothing is
+        promoted to fact by being stored here. Copyright and licensing of what you add stay your responsibility.
+        """
+        folder = folder or paths().research / "library"
+        count = 0
+        for kind in KINDS:
+            base = folder / kind
+            for path in sorted(base.rglob("*")) if base.exists() else []:
+                if path.suffix.lower() in (".txt", ".md") and path.is_file():
+                    stamp = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
+                    self.add(f"library/{kind}/{path.name}", kind, path.stem, path.read_text(encoding="utf-8", errors="replace"), path.name, stamp)
+                    count += 1
+        return count
+
     def ingest_reports(self, folder: Path | None = None) -> int:
         folder = folder or paths().research / "reports"
         count = 0

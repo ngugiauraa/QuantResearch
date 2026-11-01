@@ -365,3 +365,11 @@ def test_kmeans_and_importance_run():
     df["y"] = df.a * 2 + rng.normal(0, 0.1, 600)
     assert lab.cluster(df, ["a", "b"], 3).nunique() == 3
     assert lab.feature_importance(df.iloc[:400], df.iloc[400:], ["a", "b"], "y").index[0] == "a"
+
+
+def test_regime_labels_are_causal_and_appear_in_reports():
+    frame = market(3000)
+    full = ex.regime_labels(frame)
+    cut = ex.regime_labels(frame.iloc[:1500].reset_index(drop=True))
+    assert full.iloc[:len(cut)].tolist() == cut.tolist()
+    assert set(full) <= {"trending_high_vol", "trending_normal_vol", "ranging_high_vol", "ranging_normal_vol"}

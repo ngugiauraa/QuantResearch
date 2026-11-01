@@ -86,6 +86,19 @@ def attach_cross(base: pd.DataFrame, symbols: list[str], p: Paths | None = None,
     return out
 
 
+def cross_returns(frame: pd.DataFrame, symbols: list[str], window: int = 24) -> pd.DataFrame:
+    """Log returns of each attached cross-market close, and its rolling correlation with gold."""
+    out = {}
+    gold = np.log(frame["close"]).diff()
+    for symbol in symbols:
+        if f"{symbol}_close" not in frame:
+            continue
+        ret = np.log(frame[f"{symbol}_close"]).diff()
+        out[f"{symbol}_ret"] = ret
+        out[f"{symbol}_corr"] = gold.rolling(window, min_periods=window).corr(ret)
+    return pd.DataFrame(out, index=frame.index).astype("float64")
+
+
 MACRO_FEATURES = {"DFII10": "real_yield", "DGS10": "yield_10y", "DGS2": "yield_2y", "DTWEXBGS": "dollar_broad", "VIXCLS": "vix"}
 
 

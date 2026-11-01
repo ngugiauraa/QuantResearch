@@ -144,3 +144,13 @@ def test_event_proximity_is_right_across_time_units(unit):
     times = pd.Series(pd.to_datetime(["2024-01-01 00:00"], utc=True)).astype("datetime64[us, UTC]")
     schedule = pd.Series(pd.to_datetime(["2024-01-02 00:00"], utc=True)).astype(f"datetime64[{unit}, UTC]")
     assert store.event_proximity(times, schedule).iloc[0] == pytest.approx(24)
+
+
+def test_cross_returns_are_causal_and_skip_absent_markets():
+    bars = synthetic_bars(200, "h1", start="2024-01-01")
+    bars["xagusd_close"] = bars["close"] * 0.012
+    out = store.cross_returns(bars, ["xagusd", "missing"])
+    assert list(out.columns) == ["xagusd_ret", "xagusd_corr"]
+    assert out.xagusd_corr.iloc[-1] == pytest.approx(1.0)
+    cut = store.cross_returns(bars.iloc[:100].reset_index(drop=True), ["xagusd"])
+    assert np.allclose(out.iloc[:100], cut, equal_nan=True)

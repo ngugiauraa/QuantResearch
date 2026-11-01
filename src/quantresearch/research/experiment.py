@@ -84,6 +84,16 @@ def _score(engine: Engine, min_trades: int) -> float:
     return stats.sharpe(_daily_returns(engine))
 
 
+def regime_labels(features: pd.DataFrame) -> pd.Series:
+    """Causal market-state label per bar, indexed by when it became known. Used for performance by regime."""
+    from quantresearch.strategies.base import rolling_rank
+
+    trend = np.where(features["adx"] > 25, "trending", "ranging")
+    vol = np.where(rolling_rank(features["vol_20"]) > 2 / 3, "high_vol", "normal_vol")
+    labels = pd.Series([f"{a}_{b}" for a, b in zip(trend, vol)], index=pd.DatetimeIndex(features["close_ts"]))
+    return labels[features["adx"].notna().to_numpy() & features["vol_20"].notna().to_numpy()]
+
+
 def walk_forward(defn: StrategyDef, features: pd.DataFrame, costs: CostModel, train_years: int = 4, test_months: int = 12,
                  holdout_years: int = 2, min_trades: int = 20, execution: pd.DataFrame | None = None,
                  equity: float = 100_000.0) -> dict:
@@ -138,7 +148,7 @@ def walk_forward(defn: StrategyDef, features: pd.DataFrame, costs: CostModel, tr
     trial_daily = [s / np.sqrt(252) for s in trial_sharpes]
     return {
         "folds": records, "fold_count": len(folds), "variants_per_fold": len(grid), "trial_count": len(trial_sharpes),
-        "holdout_start": str(holdout_start.date()), "out_of_sample": metrics.report(trades, curve, equity),
+        "holdout_start": str(holdout_start.date()), "out_of_sample": metrics.report(trades, curve, equity, regime_labels(features)),
         "oos_sharpe": stats.sharpe(daily), "psr": stats.probabilistic_sharpe(daily),
         "deflated_sharpe": stats.deflated_sharpe(daily, trial_daily),
         "sharpe_ci95": list(stats.block_bootstrap_ci(daily, block=10, statistic=lambda r: stats.sharpe(r))) if len(daily) > 20 else None,
@@ -206,7 +216,7 @@ def full_report(defn: StrategyDef, features: pd.DataFrame, costs: CostModel | No
         "cost_model": costs.as_dict(), "defaults": defn.defaults, "grid": defn.grid,
         "hypotheses": hypotheses, "walk_forward": wf,
         "holdout": {"params": {k: params[k] for k in defn.grid}, "scenarios": by_scenario,
-                    "report": metrics.report(base.trades_frame(), base.equity_curve(), 100_000.0)},
+                    "report": metrics.report(base.trades_frame(), base.equity_curve(), 100_000.0, regime_labels(features))},
         "verdict": verdict(wf, by_scenario),
     }
 

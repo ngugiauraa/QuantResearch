@@ -341,3 +341,62 @@ def test_paper_session_refuses_a_real_broker():
     router.broker = NotPaper()
     with pytest.raises(TypeError):
         PaperSession(router, pd.DataFrame(), {})
+
+
+def _fold(*losses):
+    return [{"log_loss": x} for x in losses]
+
+
+def test_a_tiny_edge_or_inconsistent_folds_do_not_count_as_beating_the_baseline():
+    base = {"log_loss": 0.694, "folds": _fold(0.696, 0.694, 0.693, 0.693)}
+    # The real case: 0.0002 average gain, winning 2 of 4 folds.
+    noise = {"baseline_constant": base, "rf": {"log_loss": 0.6938, "folds": _fold(0.6964, 0.6923, 0.6924, 0.6938)}}
+    assert ml.best_model(noise) == ("rf", False)
+    # A large average driven by a single fold still fails.
+    one_fold = {"baseline_constant": base, "rf": {"log_loss": 0.68, "folds": _fold(0.64, 0.695, 0.695, 0.695)}}
+    assert ml.best_model(one_fold)[1] is False
+    consistent = {"baseline_constant": base, "rf": {"log_loss": 0.685, "folds": _fold(0.69, 0.685, 0.68, 0.685)}}
+    assert ml.best_model(consistent)[1] is True
+
+
+def test_ml_veto_inside_an_experiment_changes_decisions_and_stays_causal(frame):
+    prepared = ml.add_calendar(frame)
+    labels = ml.triple_barrier(prepared, 12)
+    half = len(frame) // 2
+    columns = ["rsi_14", "zscore_20", "adx", "vol_20", "mom_20"]
+    model = ml.fit_final(prepared.iloc[:half], labels.iloc[:half], columns, "logistic", {})
+    later = frame.iloc[half + 50:].reset_index(drop=True)
+    s = spec(strategies=["trend", "mean_reversion", "overreaction"], use_ml=True, ml_mode="required")
+    required = orch.run_experiment(s, later, model=model)
+    off = orch.run_experiment(spec(), later)
+    assert required["digest"] != off["digest"]
+    assert any("ML" in " ".join(d["reasons"]) for d in required["decisions"])
+    bars = later[[c for c in synthetic_bars(2).columns if c in later]]
+    result = orch.integrity(s, builder, bars, bars["close_ts"].iloc[1800], model=model)
+    assert result.passed, result.as_dict()
+
+
+def test_strategy_condition_labels_mark_decisions_and_when_they_became_known(frame):
+    t = pd.DataFrame({"entry_time": [frame.close_ts.iloc[100]], "exit_time": [frame.close_ts.iloc[110]], "net": [5.0]})
+    y = ml.strategy_condition_labels(frame, t)
+    assert y.label.iloc[100] == 1.0 and y.label.notna().sum() == 1 and y.label_end.iloc[100] == 110
+
+
+def test_strategy_conditions_refuse_too_few_trades_and_run_with_enough(frame):
+    t = pd.DataFrame({"entry_time": frame.close_ts.iloc[[100]].to_numpy(), "exit_time": frame.close_ts.iloc[[110]].to_numpy(), "net": [1.0]})
+    assert ml.evaluate_strategy_conditions(frame, t)["tested"] is False
+    rng = np.random.default_rng(1)
+    idx = np.arange(300, 4800, 5)
+    many = pd.DataFrame({"entry_time": frame.close_ts.iloc[idx].to_numpy(), "exit_time": frame.close_ts.iloc[idx + 4].to_numpy(), "net": rng.normal(0, 1, len(idx))})
+    out = ml.evaluate_strategy_conditions(frame, many)
+    assert out["tested"] and out["trades"] == len(idx) and out["beats_baseline"] is False  # Random outcomes.
+
+
+def test_library_folder_keeps_evidence_labels(tmp_path):
+    k = kb()
+    folder = tmp_path / "research_hypothesis"
+    folder.mkdir()
+    (folder / "paper.txt").write_text("Gold momentum may persist.", encoding="utf-8")
+    (folder / "skip.pdf").write_bytes(b"x")
+    assert k.ingest_folder(tmp_path) == 1
+    assert k.search("momentum")[0].kind == "research_hypothesis"
