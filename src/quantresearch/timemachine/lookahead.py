@@ -80,7 +80,9 @@ def check(execution: pd.DataFrame, signal_bars: pd.DataFrame, strategy_factory: 
     # Full-history run: features see everything, and the engine runs through T.
     full_features = featurize(signal_bars)
     full_engine = Engine(execution, full_features, strategy_factory(), config, risk_gate=risk_gate)
-    full_engine.run(until=cutoff)
+    # A bar opening at T is unknown at T, so the run stops before it. A quote stamped T is known at T.
+    is_quotes = "close_ts" not in execution
+    full_engine.run(until=cutoff + pd.Timedelta(nanoseconds=1) if is_quotes else cutoff)
     # Show the strategy any signal bar closing exactly at T, as the truncated run's ending does.
     full_engine._fire_signals(cutoff.as_unit("ns").value)
 
