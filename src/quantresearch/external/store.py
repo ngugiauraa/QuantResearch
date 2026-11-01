@@ -57,7 +57,7 @@ def refresh_all(p: Paths | None = None, cross: bool = True) -> dict:
             try:
                 status[symbol] = str(src.fetch_cross(symbol, p=p).name)
             except Exception as exc:
-                status[symbol] = f"failed: {type(exc).__name__}"
+                status[symbol] = f"failed: {exc}"
     report = {"refreshed_at": datetime.now(timezone.utc).isoformat(), "status": status}
     p.external.mkdir(parents=True, exist_ok=True)
     (p.external / "status.json").write_text(json.dumps(report, indent=1), encoding="utf-8")

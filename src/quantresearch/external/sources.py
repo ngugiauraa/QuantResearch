@@ -17,6 +17,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -29,7 +31,8 @@ from quantresearch.core.config import Paths, paths
 from quantresearch.dukascopy_download import DOWNLOADER
 from quantresearch.features.pit import EVENT_COLUMNS
 
-USER_AGENT = "QuantResearch research platform"
+USER_AGENT = "Mozilla/5.0 (compatible; QuantResearch/1.0)"
+RETRIES = 3
 
 # series: (description, assumed publication lag from observation date, kind)
 FRED_SERIES = {
@@ -55,10 +58,21 @@ CROSS_SYMBOLS = {
 }
 
 
-def http_get(url: str, timeout: int = 60) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return response.read()
+def http_get(url: str, timeout: int = 90) -> bytes:
+    last: Exception | None = None
+    for attempt in range(RETRIES):
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500:
+                raise  # A 403 or 404 will not change by asking again.
+            last = exc
+        except OSError as exc:
+            last = exc
+        time.sleep(3 * (attempt + 1))
+    raise last
 
 
 def _events(series, event_ts, published_ts, values, source, basis) -> pd.DataFrame:
@@ -149,23 +163,30 @@ def parse_cot(raw_zip: bytes, market: str = "GOLD - COMMODITY EXCHANGE INC.") ->
                       for name, values in fields.items()], ignore_index=True)
 
 
-def fetch_cot(start_year: int = 2006, end_year: int | None = None, getter=http_get) -> pd.DataFrame:
-    frames = []
+def fetch_cot(start_year: int = 2017, end_year: int | None = None, getter=http_get) -> pd.DataFrame:
+    """CFTC's disaggregated history: one file for 2006-2016, then one per year. A missing year is skipped."""
+    frames = [parse_cot(getter("https://www.cftc.gov/files/dea/history/fut_disagg_txt_hist_2006_2016.zip", 120))]
     end_year = end_year or datetime.now().year
     for year in range(start_year, end_year + 1):
-        frames.append(parse_cot(getter(f"https://www.cftc.gov/files/dea/history/fut_disagg_txt_{year}.zip", 120)))
+        try:
+            frames.append(parse_cot(getter(f"https://www.cftc.gov/files/dea/history/fut_disagg_txt_{year}.zip", 120)))
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
     return pd.concat(frames, ignore_index=True).drop_duplicates(["series", "event_ts"], keep="last")
 
 
 def fetch_cross(symbol: str, timeframe: str = "h1", start: str = "2003-05-01", end: str | None = None,
                 p: Paths | None = None) -> Path:
     p = p or paths()
-    end = end or (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+    end = end or datetime.now(timezone.utc).date().isoformat()
     npx = shutil.which("npx") or "npx"
     with tempfile.TemporaryDirectory() as folder:
-        subprocess.run([npx, "--yes", DOWNLOADER, "-i", symbol, "-from", start, "-to", end, "-t", timeframe, "-p", "bid",
-                        "-v", "-vu", "units", "-f", "csv", "-df", "iso", "-bs", "8", "-bp", "500",
-                        "-dir", folder, "-fn", "out"], check=True, capture_output=True, timeout=1800)
+        done = subprocess.run([npx, "--yes", DOWNLOADER, "-i", symbol, "-from", start, "-to", end, "-t", timeframe, "-p", "bid",
+                               "-v", "-vu", "units", "-f", "csv", "-df", "iso", "-bs", "8", "-bp", "500",
+                               "-dir", folder, "-fn", "out"], capture_output=True, text=True, errors="replace", timeout=1800)
+        if done.returncode != 0 or not (Path(folder) / "out.csv").exists():
+            raise RuntimeError(f"{symbol}: {(done.stdout + done.stderr)[-300:]}")
         frame = pd.read_csv(Path(folder) / "out.csv")
     frame["ts"] = pd.to_datetime(frame.pop("timestamp"), utc=True)
     target = p.external / "cross" / f"{symbol}_{timeframe}.parquet"
