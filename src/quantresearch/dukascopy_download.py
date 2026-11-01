@@ -17,13 +17,15 @@ import subprocess
 import tempfile
 import time
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 RAW_ROOT = ROOT / "data" / "raw" / "xauusd"
 LOG_PATH = ROOT / "data" / "processed" / "download_log.jsonl"
+
+DOWNLOADER = "dukascopy-node@1.51.1"
 
 SUPPORTED_TIMEFRAMES = {
     "tick", "s1", "m1", "m5", "m15",
@@ -56,6 +58,15 @@ def month_chunks(start: date, end: date):
             current = date(current.year + 1, 1, 1)
         else:
             current = date(current.year, current.month + 1, 1)
+
+
+def exclusive_end(end: date) -> str:
+    """The -to argument for an inclusive last day.
+
+    dukascopy-node stops at midnight at the START of its -to date, so passing the
+    last day itself silently drops that whole day.
+    """
+    return (end + timedelta(days=1)).isoformat()
 
 
 def terminate_process_tree(process: subprocess.Popen) -> None:
@@ -263,10 +274,10 @@ def download_month(
         return output
 
     command_template = [
-        "npx", "--yes", "dukascopy-node",
+        "npx", "--yes", DOWNLOADER,
         "-i", "xauusd",
         "-from", start.isoformat(),
-        "-to", end.isoformat(),
+        "-to", exclusive_end(end),
         "-t", timeframe,
         "-p", price,
         "-v",
