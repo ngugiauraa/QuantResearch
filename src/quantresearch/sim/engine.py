@@ -111,6 +111,7 @@ class EngineConfig:
     stop_first: bool = True
     allow_same_bar_exit: bool = True
     record_equity_every: int = 1
+    log_signal_bars: bool = True
 
 
 @dataclass
@@ -216,7 +217,7 @@ class Engine:
         self.signals = signals if signals is not None else execution.iloc[0:0]
         self._signal_close = (pd.DatetimeIndex(self.signals["close_ts"]).asi8 if len(self.signals)
                               else np.empty(0, dtype="int64"))
-        self._signal_records = None
+        self._signal_stamps = pd.DatetimeIndex(self.signals["close_ts"]) if len(self.signals) else None
         self.signal_index = -1
         self.cursor = 0
         self.now = pd.Timestamp(execution["ts"].iloc[0]) if len(execution) else pd.Timestamp(0, tz="UTC")
@@ -457,8 +458,9 @@ class Engine:
     def _fire_signals(self, upto: int) -> None:
         while self.signal_index + 1 < len(self._signal_close) and self._signal_close[self.signal_index + 1] <= upto:
             self.signal_index += 1
-            self.now = self.signals["close_ts"].iloc[self.signal_index]
-            self.log("signal_bar", index=self.signal_index)
+            self.now = self._signal_stamps[self.signal_index]
+            if self.config.log_signal_bars:
+                self.log("signal_bar", index=self.signal_index)
             self.strategy.on_bar(self.ctx)
 
     @property
