@@ -33,7 +33,7 @@ class DecisionPolicy:
     ml_mode: str = "off"  # off, veto (ML can block but never starts a trade) or required
     ml_min_confidence: float = 0.1
     risk_pct: float = 0.5
-    max_lots: float = 10.0
+    max_lots: float = 50.0
 
 
 @dataclass
@@ -92,20 +92,41 @@ def decide(votes: list[Vote], ml: dict | None, policy: DecisionPolicy, equity: f
 
 
 class DecisionStrategy(Strategy):
-    """Runs the decision engine inside the event simulator, for backtests and Time Machine experiments."""
+    """Runs the decision engine inside the event simulator, for backtests and Time Machine experiments.
+
+    Each position keeps the exit logic of the strategies that voted for it: their exit signals, an opposing
+    signal from one of them, and their holding limit. A flat holding period would change what each strategy is,
+    and in a trending market it flatters long-biased rules. A single-voter experiment therefore reproduces
+    that strategy's own trades, and a test holds it to that. `max_hold` only applies when no voter sets a limit.
+    """
     name = "decision_engine"
 
     def __init__(self, frame: pd.DataFrame, voters: dict[str, pd.DataFrame], policy: DecisionPolicy | None = None,
-                 ml: pd.DataFrame | None = None, context: pd.DataFrame | None = None, tag: str = "decision", max_hold: int | None = 48):
+                 ml: pd.DataFrame | None = None, context: pd.DataFrame | None = None, tag: str = "decision", max_hold: int | None = None):
         self.policy = policy or DecisionPolicy()
         self.tag = tag
         self.max_hold = max_hold
         self.close = frame["close"].to_numpy(dtype="float64")
-        self.voters = {n: {c: s[c].to_numpy() for c in ("long_entry", "short_entry", "stop_dist", "target_dist")} for n, s in voters.items()}
+        fields = ("long_entry", "short_entry", "stop_dist", "target_dist", "exit_long", "exit_short", "max_hold")
+        self.voters = {n: {c: s[c].to_numpy() for c in fields} for n, s in voters.items()}
         self.ml = ml
         self.context = context
         self.decisions: list[Decision] = []
         self.entries: dict[int, int] = {}
+        self.order_sources: dict[int, list[str]] = {}
+
+    def _should_exit(self, pos, i: int, started: int, votes: list[Vote]) -> str | None:
+        sources = self.order_sources.get(pos.order_id, [])
+        limits = [float(self.voters[s]["max_hold"][i]) for s in sources if math.isfinite(float(self.voters[s]["max_hold"][i]))]
+        limit = max(limits) if limits else self.max_hold
+        if limit is not None and i - started >= limit:
+            return "time"
+        key = "exit_long" if pos.side > 0 else "exit_short"
+        if any(bool(self.voters[s][key][i]) for s in sources):
+            return "signal_exit"
+        if any(v.source in sources and v.side == -pos.side for v in votes):
+            return "flip"
+        return None
 
     def _votes(self, i: int) -> list[Vote]:
         out = []
@@ -119,14 +140,15 @@ class DecisionStrategy(Strategy):
 
     def on_bar(self, ctx: Context) -> None:
         i = ctx.index
+        votes = self._votes(i)
+        remaining = ctx.positions
         for pos in ctx.positions:
             started = self.entries.setdefault(pos.id, i)
-            if self.max_hold is not None and i - started >= self.max_hold:
-                ctx.close(pos, "time")
-        if ctx.positions or ctx.orders:
-            return
-        votes = self._votes(i)
-        if not votes:
+            reason = self._should_exit(pos, i, started, votes)
+            if reason:
+                ctx.close(pos, reason)
+                remaining = [p for p in remaining if p is not pos]
+        if remaining or ctx.orders or not votes:
             return
         ml_view = None
         if self.ml is not None:
@@ -144,8 +166,10 @@ class DecisionStrategy(Strategy):
             return
         side = 1 if decision.action == "long" else -1
         price = self.close[i]
-        ctx.submit(OrderIntent(side, decision.lots, stop=price - side * decision.stop_dist,
-                               target=None if decision.target_dist is None else price + side * decision.target_dist, tag=self.tag))
+        order = ctx.submit(OrderIntent(side, decision.lots, stop=price - side * decision.stop_dist,
+                                       target=None if decision.target_dist is None else price + side * decision.target_dist, tag=self.tag))
+        if order is not None:
+            self.order_sources[order.id] = [v.source for v in votes if v.side == side]
 
     def explain(self, when) -> Decision | None:
         """Reconstruct why a decision was made at a given time."""

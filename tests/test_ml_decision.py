@@ -400,3 +400,42 @@ def test_library_folder_keeps_evidence_labels(tmp_path):
     (folder / "skip.pdf").write_bytes(b"x")
     assert k.ingest_folder(tmp_path) == 1
     assert k.search("momentum")[0].kind == "research_hypothesis"
+
+
+@pytest.mark.parametrize("name", ["trend", "mean_reversion", "overreaction", "etf_turnaround"])
+def test_single_voter_experiment_reproduces_the_strategys_own_trades(frame, name):
+    # Regression: a flat holding period made decision-engine results disagree with the strategy's own report.
+    from quantresearch.strategies import registry as strategy_registry
+
+    defn = get(name)
+    direct = strategy_registry.run(defn, frame, defn.defaults)
+    via = orch.build_session(orch.ExperimentSpec(name=name, strategies=[name], use_risk_engine=False), frame)
+    via.to_end()
+    via.engine.close_all()
+    a, b = direct.trades_frame(), via.engine.trades_frame()
+    assert len(a) == len(b) > 0
+    assert a["entry_time"].tolist() == b["entry_time"].tolist() and a["exit_time"].tolist() == b["exit_time"].tolist()
+    assert np.allclose(a["net"], b["net"])
+    assert a["reason"].tolist() == b["reason"].tolist()
+
+
+def test_position_uses_the_exit_rules_of_the_strategies_that_opened_it():
+    n = 12
+    f = pd.DataFrame({"ts": pd.date_range("2024-01-02", periods=n, freq="h", tz="UTC"), "close": 100.0})
+    f["close_ts"] = f.ts + pd.Timedelta(hours=1)
+    def voter(long_at=(), hold=np.nan, exit_at=()):
+        s = pd.DataFrame({"long_entry": False, "short_entry": False, "stop_dist": 5.0, "target_dist": np.nan, "max_hold": hold, "exit_long": False, "exit_short": False}, index=f.index)
+        s.loc[list(long_at), "long_entry"] = True
+        s.loc[list(exit_at), "exit_long"] = True
+        return s
+    from quantresearch.sim.engine import Engine as E
+    bars = synthetic_bars(n, "h1", start="2024-01-02", vol=0.00001)
+    frame2 = bars.assign(close=100.0)
+    a = DecisionStrategy(frame2, {"a": voter(long_at=[1], hold=3)})
+    trades = E(bars, frame2, a).run().trades_frame()
+    assert trades.reason.iloc[0] == "time"
+    # An exit signal from a strategy that did not open the position is ignored.
+    b = DecisionStrategy(frame2, {"a": voter(long_at=[1]), "b": voter(exit_at=[3])})
+    assert E(bars, frame2, b).run().positions
+    c = DecisionStrategy(frame2, {"a": voter(long_at=[1], exit_at=[4])})
+    assert E(bars, frame2, c).run().trades_frame().reason.iloc[0] == "signal_exit"

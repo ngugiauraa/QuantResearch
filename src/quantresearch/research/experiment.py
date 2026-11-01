@@ -208,13 +208,21 @@ def full_report(defn: StrategyDef, features: pd.DataFrame, costs: CostModel | No
         by_scenario[label] = rep
     base = _run_slice(signals, defn.name, holdout_start, end, costs, execution)
     hypotheses = run_hypotheses(defn, features, wf["holdout_start"], params)
+    # Gold's own return over the same periods. A long-biased rule can look good just by holding a rising market.
+    first_test = pd.Timestamp(wf["folds"][0]["train_end"], tz="UTC") if wf["folds"] and "train_end" in wf["folds"][0] else features["ts"].iloc[0]
+    def gold_return(start, stop):
+        part = _slice(features, start, stop)["close"]
+        return float(part.iloc[-1] / part.iloc[0] - 1) if len(part) > 1 else None
+    benchmark = {"out_of_sample_buy_hold_return": gold_return(first_test, holdout_start), "holdout_buy_hold_return": gold_return(holdout_start, end),
+                 "note": "Unleveraged price return, before financing. Strategies risk 0.5 % per trade, so returns are not directly comparable; "
+                         "it shows how much market drift was available."}
     return {
         "strategy": defn.name, "title": defn.title, "methodology": defn.methodology, "limitations": defn.limitations,
         "created_at": datetime.now(timezone.utc).isoformat(), "dataset_version": dataset or dataset_version(),
         "signal_timeframe": defn.signal_tf, "execution": "signal_bars" if execution is None else "finer_bars",
         "period": {"first": str(features["ts"].iloc[0]), "last": str(features["ts"].iloc[-1]), "holdout_start": wf["holdout_start"]},
         "cost_model": costs.as_dict(), "defaults": defn.defaults, "grid": defn.grid,
-        "hypotheses": hypotheses, "walk_forward": wf,
+        "hypotheses": hypotheses, "walk_forward": wf, "benchmark": benchmark,
         "holdout": {"params": {k: params[k] for k in defn.grid}, "scenarios": by_scenario,
                     "report": metrics.report(base.trades_frame(), base.equity_curve(), 100_000.0, regime_labels(features))},
         "verdict": verdict(wf, by_scenario),

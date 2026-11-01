@@ -37,7 +37,7 @@ class ExperimentSpec:
     conflict: str = "stand_down"
     initial_equity: float = 100_000.0
     costs: dict = field(default_factory=dict)
-    max_hold: int | None = 48
+    max_hold: int | None = None  # Only used when no voting strategy sets its own limit.
 
 
 def build_voters(spec: ExperimentSpec, frame: pd.DataFrame, fit_end=None) -> dict[str, pd.DataFrame]:
@@ -45,8 +45,10 @@ def build_voters(spec: ExperimentSpec, frame: pd.DataFrame, fit_end=None) -> dic
     for name in spec.strategies:
         defn = get(name)
         params = defn.params(**spec.params.get(name, {}))
-        if defn.fit is not None:
+        # Cells supplied by the caller were fitted on earlier data, so they are not fitted again here.
+        if defn.fit is not None and "long_cells" not in params:
             cutoff = pd.Timestamp(fit_end) if fit_end is not None else frame["ts"].iloc[len(frame) // 2]
+            cutoff = cutoff.tz_localize("UTC") if cutoff.tzinfo is None else cutoff.tz_convert("UTC")
             params = {**params, **defn.fit(frame[frame["ts"] < cutoff], params)}
         voters[name] = defn.prepare(frame, params)
     return voters
@@ -78,8 +80,8 @@ def ml_view(model: ml.TrainedModel, frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_session(spec: ExperimentSpec, frame: pd.DataFrame, execution: pd.DataFrame | None = None, model: ml.TrainedModel | None = None,
-                  fit_end=None, risk: RiskEngine | None = None) -> ReplaySession:
-    voters = build_voters(spec, frame, fit_end)
+                  fit_end=None, risk: RiskEngine | None = None, voters: dict | None = None) -> ReplaySession:
+    voters = build_voters(spec, frame, fit_end) if voters is None else voters
     predictions = ml_view(model, frame) if spec.use_ml and model is not None else None
     context = skill_context(spec, frame)
     policy = DecisionPolicy(min_votes=spec.min_votes, conflict=spec.conflict, ml_mode=spec.ml_mode if spec.use_ml else "off")
@@ -97,8 +99,8 @@ def build_session(spec: ExperimentSpec, frame: pd.DataFrame, execution: pd.DataF
 
 
 def run_experiment(spec: ExperimentSpec, frame: pd.DataFrame, execution: pd.DataFrame | None = None, model: ml.TrainedModel | None = None,
-                   fit_end=None) -> dict:
-    session = build_session(spec, frame, execution, model, fit_end)
+                   fit_end=None, voters: dict | None = None) -> dict:
+    session = build_session(spec, frame, execution, model, fit_end, voters=voters)
     session.to_end()
     engine = session.engine
     engine.close_all()
@@ -167,8 +169,15 @@ def holdout_comparison(start: str, end: str | None = None, fit_end: str | None =
     rows_ = registry.rows()
     promoted = registry.promoted()
     model = promoted or (registry.load(rows_[0]["id"]) if rows_ else None)
-    window = frame[frame["ts"] >= pd.Timestamp(start, tz="UTC")].reset_index(drop=True)
-    specs = [ExperimentSpec(name=name, strategies=[name], use_risk_engine=False) for name in REGISTRY]
+    in_window = (frame["ts"] >= pd.Timestamp(start, tz="UTC")).to_numpy()
+    window = frame[in_window].reset_index(drop=True)
+    # Each engine uses the parameters its walk-forward chose before the holdout, so this ties to its own report.
+    chosen: dict[str, dict] = {}
+    for name in REGISTRY:
+        path = paths().research / "reports" / f"{name}_latest.json"
+        if path.exists():
+            chosen[name] = json.loads(path.read_text(encoding="utf-8"))["holdout"]["params"]
+    specs = [ExperimentSpec(name=name, strategies=[name], use_risk_engine=False, params={name: chosen.get(name, {})}) for name in REGISTRY]
     all_names = [n for n in REGISTRY if n != "behavioral"]  # Behavioral signals on M15, this comparison is on H1.
     specs = [s for s in specs if s.name in all_names]
     specs += [
@@ -184,11 +193,15 @@ def holdout_comparison(start: str, end: str | None = None, fit_end: str | None =
     rows = []
     for spec in specs:
         for name in spec.strategies:
+            spec.params.setdefault(name, dict(chosen.get(name, {})))
             defn_item = get(name)
             if defn_item.fit is not None:
                 pre = frame[frame["ts"] < pd.Timestamp(fit_end or start, tz="UTC")]
-                spec.params.setdefault(name, defn_item.fit(pre, defn_item.defaults))
-        result = run_experiment(spec, window, model=model if spec.use_ml else None, fit_end=fit_end or start)
+                spec.params[name] = {**spec.params[name], **defn_item.fit(pre, defn_item.params(**spec.params[name]))}
+        # Signals are computed on all history so rolling windows are warm, then cut to the holdout.
+        full_voters = build_voters(spec, frame, fit_end or start)
+        voters = {k: v[in_window].reset_index(drop=True) for k, v in full_voters.items()}
+        result = run_experiment(spec, window, model=model if spec.use_ml else None, fit_end=fit_end or start, voters=voters)
         r = result["report"]
         rows.append({"name": spec.name, "trades": r.get("trades", 0), "net_profit": r.get("net_profit", 0.0), "sharpe": r.get("sharpe"), "max_drawdown": r.get("max_drawdown"),
                      "profit_factor": r.get("profit_factor"), "expectancy": r.get("expectancy"), "win_rate": r.get("win_rate"), "decisions": result["decision_counts"], "digest": result["digest"]})
