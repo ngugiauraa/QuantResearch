@@ -1,0 +1,60 @@
+:root {
+  --bg: #0e1216;
+  --panel: #161c22;
+  --panel-2: #1d252c;
+  --line: #2a343d;
+  --text: #dce3ea;
+  --muted: #8b98a5;
+  --up: #3fb68b;
+  --down: #e0605e;
+  --warn: #e0a84e;
+  --accent: #5b9dd9;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.shell { display: grid; grid-template-columns: 196px 1fr; min-height: 100vh; }
+nav { background: var(--panel); border-right: 1px solid var(--line); padding: 14px 8px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+nav .brand { font-weight: 700; padding: 4px 10px 14px; letter-spacing: .01em; }
+nav button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--muted); padding: 8px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
+nav button:hover { color: var(--text); background: var(--panel-2); }
+nav button.active { color: var(--text); background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+main { padding: 18px 22px 60px; min-width: 0; }
+h1 { font-size: 20px; margin: 0 0 14px; }
+h2 { font-size: 13px; margin: 0 0 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-bottom: 14px; }
+.grid.wide { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 14px; min-width: 0; overflow: auto; }
+.grid .card { margin-bottom: 0; }
+.stat { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.label { color: var(--muted); font-size: 12px; }
+.up { color: var(--up); } .down { color: var(--down); } .warn { color: var(--warn); } .muted { color: var(--muted); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--muted); font-weight: 500; }
+th, td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+button.btn, select, input, textarea { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); padding: 6px 10px; border-radius: 5px; font: inherit; }
+button.btn { cursor: pointer; }
+button.btn:hover:not(:disabled) { border-color: var(--accent); }
+button.btn:disabled { opacity: .5; cursor: not-allowed; }
+button.danger { background: #4a1f1f; border-color: #7c2e2e; color: #ffd9d6; font-weight: 600; }
+button.primary { background: #20435f; border-color: #2f6b94; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); }
+.pill.ok { color: var(--up); border-color: #2d6e56; } .pill.bad { color: var(--down); border-color: #7c2e2e; } .pill.warn { color: var(--warn); border-color: #7a5d2a; }
+.notice { background: #2b2415; border: 1px solid #5f4c23; color: #eed49d; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+.error { background: #2d1919; border: 1px solid #6e2c2c; color: #f6c0bd; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+.chart { width: 100%; height: 480px; }
+.chart.small { height: 240px; }
+.log { font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-word; max-height: 340px; overflow: auto; }
+ul.plain { margin: 4px 0; padding-left: 18px; }
+label.check { display: inline-flex; gap: 5px; align-items: center; margin-right: 10px; }
+.skeleton { color: var(--muted); padding: 14px 0; }
+@media (max-width: 760px) {
+  .shell { grid-template-columns: 1fr; }
+  nav { position: static; height: auto; display: flex; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
+  nav .brand { width: 100%; padding-bottom: 6px; }
+  nav button { width: auto; }
+  main { padding: 14px 16px 40px; }
+  .grid.wide { grid-template-columns: 1fr; }
+  .chart { height: 340px; }
+}

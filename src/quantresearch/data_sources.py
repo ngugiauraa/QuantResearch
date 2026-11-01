@@ -6,24 +6,24 @@ from copy import deepcopy
 DATA_SOURCES = {
     "dukascopy": {
         "category": "market_data",
-        "status": "partially_acquired",
-        "instruments": ["XAUUSD"],
-        "fields": ["timestamp", "open", "high", "low", "close", "volume"],
-        "resolution": ["1m"],
+        "status": "acquired",
+        "instruments": ["XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "USDJPY", "dollar index", "T-bond"],
+        "fields": ["timestamp", "bid and ask open/high/low/close", "volume"],
+        "resolution": ["tick", "1m", "1h"],
         "notes": (
-            "Downloaded feed is bid-side data. Volume semantics must be "
-            "verified with the provider; do not assume global traded volume."
+            "M1 bid and ask, and ticks with both sides. Volume is provider "
+            "activity, not global traded volume. See the README for coverage."
         ),
     },
     "federal_reserve": {
         "category": "macroeconomic",
-        "status": "not_acquired",
-        "fields": ["policy_rate", "statements", "meeting_dates"],
+        "status": "meeting_dates_only",
+        "fields": ["meeting_dates"],
         "notes": "Official Federal Reserve publications and policy data.",
     },
     "fred": {
         "category": "macroeconomic",
-        "status": "not_acquired",
+        "status": "latest_values_only_no_vintages",
         "fields": ["treasury_yields", "real_yields", "dollar_related_series"],
         "notes": (
             "Check series definitions, update frequency, and release/vintage "
@@ -32,19 +32,19 @@ DATA_SOURCES = {
     },
     "bls": {
         "category": "macroeconomic",
-        "status": "not_acquired",
+        "status": "schedule_refused_automated_access_values_via_fred",
         "fields": ["CPI", "employment", "unemployment"],
         "notes": "Economic observations and publication dates.",
     },
     "bea": {
         "category": "macroeconomic",
-        "status": "not_acquired",
+        "status": "values_via_fred",
         "fields": ["PCE", "GDP", "income"],
         "notes": "Economic observations and publication dates.",
     },
     "news_events": {
         "category": "news",
-        "status": "not_acquired",
+        "status": "optional_recent_headlines_gdelt",
         "fields": ["published_at", "source", "headline", "event_type"],
         "notes": "Store publication timestamps separately from event timestamps.",
     },

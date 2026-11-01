@@ -1,0 +1,178 @@
+"""Long-lived platform objects shared by the API: broker, risk engine, router, stores and replays.
+
+Bound to one local process. The broker defaults to paper. Setting QR_BROKER=mt5 attaches the MT5 adapter in research
+mode, which can read but not trade until the owner activates live trading. Nothing else can select a real broker.
+"""
+from __future__ import annotations
+
+import json
+import os
+import threading
+import uuid
+from datetime import datetime, timezone
+
+import numpy as np
+import pandas as pd
+
+from quantresearch.core.config import Paths, paths
+from quantresearch.execution.broker import BrokerError, PaperBroker
+from quantresearch.execution.router import AuditLog, Mode, OrderRouter
+from quantresearch.external import store as ext
+from quantresearch.features.registry import build_features
+from quantresearch.knowledge.store import KnowledgeBase
+from quantresearch.ml.pipeline import ModelRegistry
+from quantresearch.research.experiment import Ledger
+from quantresearch.risk.engine import RiskEngine, RiskLimits, RiskState
+from quantresearch.skills.registry import SkillLog
+from quantresearch.timemachine import orchestrate as orch
+from quantresearch.timemachine.replay import ReplaySession
+from quantresearch.warehouse import store as bars
+
+
+class Services:
+    def __init__(self, p: Paths | None = None):
+        self.p = p or paths()
+        self.p.app.mkdir(parents=True, exist_ok=True)
+        self.lock = threading.RLock()
+        self.limits_path = self.p.app / "risk_limits.json"
+        self.risk = RiskEngine(self._load_limits(), RiskState(self.p.app / "risk.sqlite"), news_schedule=self._event_schedule)
+        self.audit = AuditLog(self.p.app / "audit.sqlite")
+        self.broker = self._make_broker()
+        mode = Mode.PAPER if self.broker.is_simulated else Mode.RESEARCH
+        self.router = OrderRouter(self.broker, self.risk, self.audit, mode)
+        self.knowledge = KnowledgeBase(path=self.p.app / "knowledge.sqlite")
+        self.models = ModelRegistry(self.p)
+        self.skill_log = SkillLog(self.p.app / "skills.sqlite")
+        self.replays: dict[str, ReplaySession] = {}
+        self.jobs: dict[str, dict] = {}
+        self.started_at = datetime.now(timezone.utc)
+        self.router.reconcile()
+
+    def _make_broker(self):
+        if os.environ.get("QR_BROKER") == "mt5":
+            from quantresearch.execution.mt5_adapter import Mt5Broker
+            from quantresearch.execution.secrets import load_mt5_credentials
+
+            broker = Mt5Broker(credentials=load_mt5_credentials(), audit=lambda e, d: self.audit.write(e, d))
+            broker.connect()
+            return broker
+        return PaperBroker(self.p.app / "paper.sqlite")
+
+    def _load_limits(self) -> RiskLimits:
+        if self.limits_path.exists():
+            return RiskLimits(**json.loads(self.limits_path.read_text(encoding="utf-8")))
+        return RiskLimits()
+
+    def save_limits(self, values: dict) -> RiskLimits:
+        merged = {**self.risk.limits.__dict__, **values}
+        limits = RiskLimits(**merged)
+        limits.validate()
+        self.risk.limits = limits
+        self.limits_path.write_text(json.dumps(limits.__dict__, indent=1), encoding="utf-8")
+        self.audit.write("risk_limits_changed", values)
+        return limits
+
+    def _event_schedule(self) -> list[datetime]:
+        """Published FOMC decision times. A missing calendar is reported by the risk engine as a block."""
+        events = ext.read_events(self.p)
+        rows = events[events["series"] == "FOMC_DECISION"]
+        return [t.to_pydatetime() for t in rows["event_ts"]]
+
+    # ------------------------------------------------------------ market data
+    def latest_bar(self, tf: str = "m1") -> dict | None:
+        try:
+            con_bars = bars.load_bars(tf, start=pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=45), p=self.p)
+        except FileNotFoundError:
+            return None
+        return None if con_bars.empty else con_bars.iloc[-1].to_dict()
+
+    def refresh_paper_quote(self) -> dict:
+        """The paper broker's price. Without a live feed this is the last stored bar, and is labelled so."""
+        latest = self.latest_bar("m1")
+        if latest is None:
+            return {"source": "none"}
+        if isinstance(self.broker, PaperBroker):
+            ask = latest["ask_close"]
+            self.broker.on_quote(float(latest["bid_close"]), float(ask if ask == ask else latest["bid_close"]), str(latest["close_ts"]))
+        return {"source": "stored_history_not_live", "time": str(latest["close_ts"]), "bid": latest["bid_close"], "ask": latest["ask_close"]}
+
+    def feature_window(self, tf: str, limit: int, end=None) -> pd.DataFrame:
+        """The most recent `limit` bars with features. Extra bars are loaded first so warm-up is complete."""
+        seconds = {"m1": 60, "m5": 300, "m15": 900, "m30": 1800, "h1": 3600, "h4": 14400, "d1": 86400, "d1ny": 86400, "mn1": 2678400}[tf]
+        stop = pd.Timestamp.now(tz="UTC") if end is None else pd.Timestamp(end, tz="UTC")
+        begin = stop - pd.Timedelta(seconds=seconds * (limit + 400) * 1.7)
+        frame = bars.load_bars(tf, begin, stop, p=self.p)
+        return build_features(frame).tail(limit).reset_index(drop=True)
+
+    # ------------------------------------------------------------ replays
+    def new_replay(self, spec: orch.ExperimentSpec, tf: str, start: str, end: str, execution: str | None = None) -> tuple[str, ReplaySession]:
+        from quantresearch.research.experiment import load_research_frame
+        from quantresearch.strategies import get
+
+        frame = bars.load_bars(tf, start, end, p=self.p)
+        if frame.empty:
+            raise ValueError(f"No {tf} bars between {start} and {end}")
+        features = build_features(frame)
+        needs = sorted({n for s in spec.strategies for n in get(s).needs})
+        if needs:
+            features = ext.attach_cross(features, needs, self.p)
+        macro = ext.macro_features(features, p=self.p)
+        features = pd.concat([features, macro], axis=1)
+        model = self.models.promoted() if spec.use_ml else None
+        exec_bars = None
+        if execution == "tick":
+            exec_bars = bars.load_ticks(start, end, p=self.p)
+            if exec_bars.empty:
+                raise ValueError(f"No tick data between {start} and {end}. Tick history is still partial; see the README.")
+        elif execution:
+            exec_bars = bars.load_bars(execution, start, end, p=self.p)
+        session = orch.build_session(spec, features, exec_bars, model)
+        rid = uuid.uuid4().hex[:10]
+        self.replays[rid] = session
+        self.audit.write("replay_created", {"id": rid, "tf": tf, "start": start, "end": end, "strategies": spec.strategies, "skills": spec.skills})
+        return rid, session
+
+    # ------------------------------------------------------------ background jobs
+    def start_job(self, kind: str, work) -> str:
+        job_id = uuid.uuid4().hex[:10]
+        self.jobs[job_id] = {"id": job_id, "kind": kind, "status": "running", "started_at": datetime.now(timezone.utc).isoformat()}
+
+        def runner():
+            try:
+                result = work()
+                self.jobs[job_id].update(status="done", result=result)
+            except Exception as exc:  # Reported to the dashboard rather than lost in a thread.
+                self.jobs[job_id].update(status="failed", error=f"{type(exc).__name__}: {exc}")
+
+        threading.Thread(target=runner, daemon=True).start()
+        return job_id
+
+    def ledger(self) -> Ledger:
+        return Ledger(self.p)
+
+
+def to_jsonable(value):
+    """NaN and infinity are not valid JSON, and pandas and numpy types need converting."""
+    if isinstance(value, dict):
+        return {str(k): to_jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [to_jsonable(v) for v in value]
+    if isinstance(value, (np.bool_,)):
+        return bool(value)
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        return None if not np.isfinite(value) else float(value)
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return value.isoformat()
+    if isinstance(value, pd.Timedelta):
+        return str(value)
+    if value is pd.NaT:
+        return None
+    if isinstance(value, (pd.DataFrame,)):
+        return to_jsonable(value.to_dict("records"))
+    if isinstance(value, (pd.Series,)):
+        return to_jsonable(value.to_dict())
+    if isinstance(value, np.ndarray):
+        return to_jsonable(value.tolist())
+    return value

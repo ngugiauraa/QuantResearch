@@ -153,7 +153,8 @@ class ReplaySession:
                  "stop": t.stop, "target": t.target}
                 for t in e.trades[-200:]
             ],
-            "events": e.events[-events:],
+            # Bar-close markers would bury the decisions and fills in the log view.
+            "events": [x for x in e.events[-(events * 8):] if x["event"] != "signal_bar"][-events:],
         }
 
     def record(self) -> dict:

@@ -104,3 +104,9 @@ class TestDataPipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ConsolidateGuardTests(unittest.TestCase):
+    def test_refuses_the_validated_archive(self):
+        from quantresearch.consolidate import consolidate
+        with self.assertRaises(ValueError):
+            consolidate(Path("nope"), Path("data/processed/parquet"), "m1")

@@ -85,7 +85,9 @@ def check(execution: pd.DataFrame, signal_bars: pd.DataFrame, strategy_factory: 
     full_engine._fire_signals(cutoff.value)
 
     # Truncated run: nothing after T exists.
-    exec_cut = execution[execution["close_ts"] <= cutoff].reset_index(drop=True)
+    # A quote has no duration, so it is known at its own time. A bar is known when it closes.
+    known_at = execution["close_ts"] if "close_ts" in execution else execution["ts"]
+    exec_cut = execution[known_at <= cutoff].reset_index(drop=True)
     signal_cut = signal_bars[signal_bars["close_ts"] <= cutoff].reset_index(drop=True)
     cut_features = featurize(signal_cut)
     cut_engine = Engine(exec_cut, cut_features, strategy_factory(), config, risk_gate=risk_gate)

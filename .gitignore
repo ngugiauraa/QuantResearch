@@ -17,3 +17,7 @@ data/models/
 data/replays/
 node_modules/
 .next/
+frontend/out/
+frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
+data/*.log

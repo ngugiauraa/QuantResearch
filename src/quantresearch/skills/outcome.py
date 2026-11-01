@@ -118,7 +118,9 @@ def simulate_plan(bars: pd.DataFrame, entry: float, stop: float, target: float, 
         raise ValueError("Nothing is left of the session to replay")
     mod = _module()
     mc = mod.simulate(pool, entry, stop, target, k, last, replays, seed, window, "buy" if side > 0 else "sell")
-    mc["until"] = "session end"
+    # Upstream's verdict text reads a clock time. The trading day ends at 17:00 New York.
+    minutes = (17 * 60 + (last + 1) * SLOT_MINUTES) % (24 * 60)
+    mc["until"] = f"{minutes // 60:02d}:{minutes % 60:02d}"
     risk = abs(entry - stop)
     return {
         "plan": {"side": side, "entry": entry, "stop": stop, "target": target, "entry_time": str(when), "entry_slot": k},

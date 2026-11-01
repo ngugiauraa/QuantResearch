@@ -55,7 +55,7 @@ def refresh_all(p: Paths | None = None, cross: bool = True) -> dict:
     if cross:
         for symbol in src.CROSS_SYMBOLS:
             try:
-                status[symbol] = str(src.fetch_cross(symbol, p=p).name)
+                status[symbol] = str(src.fetch_cross(symbol, start=src.CROSS_START.get(symbol, "2003-05-01"), p=p).name)
             except Exception as exc:
                 status[symbol] = f"failed: {exc}"
     report = {"refreshed_at": datetime.now(timezone.utc).isoformat(), "status": status}

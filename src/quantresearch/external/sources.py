@@ -58,6 +58,10 @@ CROSS_SYMBOLS = {
 }
 
 
+# Some provider instruments start later. Requesting earlier dates makes the tool fail outright.
+CROSS_START = {"usa500idxusd": "2012-01-01", "lightcmdusd": "2012-01-01"}
+
+
 def http_get(url: str, timeout: int = 90) -> bytes:
     last: Exception | None = None
     for attempt in range(RETRIES):

@@ -172,3 +172,31 @@ def test_viewer_serves_page_and_controls_replay():
             post({"action": "buy"})
     finally:
         server.shutdown()
+
+
+def tick_market(seconds=7200, seed=4):
+    rng = np.random.default_rng(seed)
+    ts = pd.date_range("2024-01-02 10:00", periods=seconds, freq="s", tz="UTC")
+    bid = 2000 + np.cumsum(rng.normal(0, 0.05, seconds))
+    return pd.DataFrame({"ts": ts, "bid": bid, "ask": bid + 0.3, "ask_volume": 1.0, "bid_volume": 1.0})
+
+
+def test_tick_replay_runs_and_passes_look_ahead():
+    from quantresearch.warehouse.store import _finish, ticks_to_bars
+
+    ticks = tick_market()
+    m1 = _finish(ticks_to_bars(ticks, "m1"), "m1", None)
+    session = ReplaySession(ticks, build_features(m1), SmaCross, ReplayConfig(name="ticks", execution="tick"))
+    session.step(4000)
+    assert session.engine.cursor == 4000 and session.snapshot()["bid"] is not None
+    session.to_end()
+    assert session.engine.trades or session.engine.positions
+    assert all(t.cost_source == "observed_tick" for t in session.engine.trades)
+    assert lookahead.check(ticks, m1, SmaCross, "2024-01-02 11:20").passed
+
+
+def test_snapshot_log_omits_bar_markers_but_keeps_decisions():
+    s = session()
+    s.step(2000)
+    assert all(e["event"] != "signal_bar" for e in s.snapshot()["events"])
+    assert any(e["event"] == "signal_bar" for e in s.engine.events)
