@@ -87,13 +87,23 @@ def code_version() -> str:
 
 
 # ---------------------------------------------------------------- worker side
-def _worker_init() -> None:
+def _worker_init(parent_pid: int | None = None) -> None:
     try:
         import psutil
         p = psutil.Process()
         p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS if sys.platform == "win32" else 10)
     except Exception:
         pass
+    if parent_pid:
+        # On Windows a spawned worker does not notice its controller dying, and would live on holding memory.
+        # Each worker therefore exits by itself shortly after its parent disappears.
+        def watch():
+            import psutil
+            while True:
+                time.sleep(5)
+                if not psutil.pid_exists(parent_pid):
+                    os._exit(0)
+        threading.Thread(target=watch, daemon=True).start()
 
 
 def execute(task: dict) -> dict:
@@ -325,7 +335,8 @@ class Controller:
             os.environ[var] = "1"
         # No max_tasks_per_child: with spawn it can deadlock when a worker retires (observed here). Memory growth is
         # capped instead by recycling the whole pool every `worker_task_limit` rounds.
-        self.pool = ProcessPoolExecutor(max_workers=self.workers, mp_context=mp.get_context("spawn"), initializer=_worker_init)
+        self.pool = ProcessPoolExecutor(max_workers=self.workers, mp_context=mp.get_context("spawn"), initializer=_worker_init,
+                                        initargs=(os.getpid(),))
         self.pool_started_round = self.state["round"]
 
     def restart_pool(self, workers: int | None = None, kill: bool = False) -> None:
@@ -767,7 +778,7 @@ class Controller:
         reason = "unknown"
         try:
             if hasattr(self, "_resumed_at"):
-                self.log(f"resumed from verified checkpoint at round {self._resumed_at}; any interrupted round is recomputed with the same seeds")
+                self.log(f"resumed from verified checkpoint at round {self._resumed_at} with code {code_version()}; any interrupted round is recomputed with the same seeds")
             self.log(f"run {self.cfg.run_id}: seed {self.cfg.seed}, up to {self.cfg.max_hours} h, {self.workers} workers. {HOLDOUT_NOTE}")
             self.db.execute("UPDATE runs SET status='running' WHERE run_id=?", (self.cfg.run_id,))
             self.db.commit()

@@ -542,3 +542,27 @@ def test_no_structural_family_is_frozen_more_than_twice_per_cell(controller_root
                         "GROUP BY dataset, tf, vintage, family)").fetchone()[0]
     con.close()
     assert worst is None or worst <= 2
+
+
+ORPHAN_SCRIPT = """
+import os, sys, multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor
+from quantresearch.discovery.controller import _worker_init
+if __name__ == "__main__":
+    pool = ProcessPoolExecutor(1, mp_context=mp.get_context("spawn"), initializer=_worker_init, initargs=(os.getpid(),))
+    print(pool.submit(os.getpid).result(), flush=True)
+    os._exit(9)  # die without shutting the pool down, as a crashed controller would
+"""
+
+
+def test_workers_exit_when_their_controller_dies(tmp_path):
+    import time
+    import psutil
+    script = tmp_path / "orphan.py"
+    script.write_text(ORPHAN_SCRIPT)
+    done = subprocess.run([sys.executable, str(script)], env={**os.environ, "PYTHONPATH": str(SRC)}, capture_output=True, text=True, timeout=120)
+    worker = int(done.stdout.strip().splitlines()[-1])
+    deadline = time.time() + 30
+    while psutil.pid_exists(worker) and time.time() < deadline:
+        time.sleep(1)
+    assert not psutil.pid_exists(worker)
