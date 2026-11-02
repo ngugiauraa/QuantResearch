@@ -277,17 +277,32 @@ class Controller:
         stray = self.db.execute("SELECT count(*) FROM rounds WHERE run_id=? AND round>?", (self.cfg.run_id, state["round"])).fetchone()[0]
         if stray:
             raise SystemExit(f"Database has {stray} round(s) after checkpoint {state['round']}: inconsistent state, refusing to resume.")
-        if "suspended_s" not in state:
-            # Runs started before sleep detection: find rounds whose wall time far exceeds the work done in them
-            # (the slowest task's CPU time), which only a suspended computer explains, and stop counting that time.
+        if not state.get("sleep_audit_v2"):
+            # Rounds recorded before sleep detection existed: time with no work happening, inside a round (wall time
+            # far above the slowest task's CPU time) or between two rounds (a long pause before the next started),
+            # is a suspended computer. It is removed from research time once; later sleeps are caught live.
             gap = 0.0
-            for r in self.db.execute("SELECT r.round, (julianday(r.ended_at)-julianday(r.started_at))*86400 AS wall, max(t.cpu_s) AS cpu "
-                                     "FROM rounds r JOIN tasks t ON t.run_id=r.run_id AND t.round=r.round WHERE r.run_id=? GROUP BY r.round",
-                                     (self.cfg.run_id,)):
-                if r["wall"] and r["wall"] > 1800 and (r["cpu"] or 0) < 0.25 * r["wall"]:
-                    gap += r["wall"] - max(r["cpu"] or 0, 60.0)
-            state["suspended_s"] = gap
+            prev_end = None
+            for r in self.db.execute("SELECT r.round, julianday(r.started_at)*86400 AS s, julianday(r.ended_at)*86400 AS e, max(t.cpu_s) AS cpu "
+                                     "FROM rounds r LEFT JOIN tasks t ON t.run_id=r.run_id AND t.round=r.round WHERE r.run_id=? "
+                                     "GROUP BY r.round ORDER BY r.round", (self.cfg.run_id,)):
+                wall = (r["e"] or 0) - (r["s"] or 0)
+                if wall > 1800 and (r["cpu"] or 0) < 0.25 * wall:
+                    gap += wall - max(r["cpu"] or 0, 60.0)
+                if prev_end is not None and r["s"] - prev_end > 900:
+                    gap += r["s"] - prev_end - 60.0
+                prev_end = r["e"]
+            sessions = self.db.execute("SELECT count(*) FROM events WHERE run_id=? AND message LIKE 'resumed from%'", (self.cfg.run_id,)).fetchone()[0]
+            if sessions:  # pauses between a stop and the following resume are not research time either, and never were counted
+                stops = [r[0] for r in self.db.execute("SELECT julianday(ts)*86400 FROM events WHERE run_id=? AND message LIKE 'stopping:%' ORDER BY id", (self.cfg.run_id,))]
+                resumes = [r[0] for r in self.db.execute("SELECT julianday(ts)*86400 FROM events WHERE run_id=? AND message LIKE 'resumed from%' ORDER BY id", (self.cfg.run_id,))]
+                for a_, b_ in zip(stops, resumes):
+                    if b_ - a_ > 900:  # such a pause was added above as a between-round gap, but was never counted
+                        gap -= b_ - a_ - 60.0
+            gap = max(0.0, gap)
+            state["suspended_s"] = float(state.get("suspended_s", 0.0)) + gap
             state["elapsed_s"] = max(0.0, float(state.get("elapsed_s", 0.0)) - gap)
+            state["sleep_audit_v2"] = True
             self._retro_suspended = gap
         self.db.execute("UPDATE runs SET sessions=sessions+1, status='resumed' WHERE run_id=?", (self.cfg.run_id,))
         self.db.commit()
