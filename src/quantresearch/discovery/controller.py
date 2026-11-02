@@ -150,6 +150,9 @@ class Monitor(threading.Thread):
         self.lock = threading.Lock()
         self.procs: dict = {}
         self.last: dict = {}
+        self.suspended_s = 0.0
+        self.suspensions: list[tuple[float, float]] = []
+        self._tick = time.time()
 
     def sample(self) -> dict:
         import psutil
@@ -174,6 +177,14 @@ class Monitor(threading.Thread):
 
     def run(self) -> None:
         while self.alive:
+            now_t = time.time()
+            gap = now_t - self._tick
+            if gap > max(60.0, 6 * self.interval):
+                # The thread sleeps for `interval`; a much longer gap means the whole machine was suspended.
+                with self.lock:
+                    self.suspended_s += gap - self.interval
+                    self.suspensions.append((self._tick, now_t))
+            self._tick = now_t
             try:
                 s = self.sample()
                 with self.lock:
@@ -266,6 +277,18 @@ class Controller:
         stray = self.db.execute("SELECT count(*) FROM rounds WHERE run_id=? AND round>?", (self.cfg.run_id, state["round"])).fetchone()[0]
         if stray:
             raise SystemExit(f"Database has {stray} round(s) after checkpoint {state['round']}: inconsistent state, refusing to resume.")
+        if "suspended_s" not in state:
+            # Runs started before sleep detection: find rounds whose wall time far exceeds the work done in them
+            # (the slowest task's CPU time), which only a suspended computer explains, and stop counting that time.
+            gap = 0.0
+            for r in self.db.execute("SELECT r.round, (julianday(r.ended_at)-julianday(r.started_at))*86400 AS wall, max(t.cpu_s) AS cpu "
+                                     "FROM rounds r JOIN tasks t ON t.run_id=r.run_id AND t.round=r.round WHERE r.run_id=? GROUP BY r.round",
+                                     (self.cfg.run_id,)):
+                if r["wall"] and r["wall"] > 1800 and (r["cpu"] or 0) < 0.25 * r["wall"]:
+                    gap += r["wall"] - max(r["cpu"] or 0, 60.0)
+            state["suspended_s"] = gap
+            state["elapsed_s"] = max(0.0, float(state.get("elapsed_s", 0.0)) - gap)
+            self._retro_suspended = gap
         self.db.execute("UPDATE runs SET sessions=sessions+1, status='resumed' WHERE run_id=?", (self.cfg.run_id,))
         self.db.commit()
         self._resumed_at = state["round"]
@@ -274,6 +297,14 @@ class Controller:
     def checkpoint(self) -> None:
         """Write and verify the state file, record it, and commit everything for the round in one transaction."""
         self.state["elapsed_s"] = self.elapsed()
+        self.state["suspended_s"] = self.suspended()
+        while self.monitor.suspensions:
+            a, b = self.monitor.suspensions.pop(0)
+            self.log(f"computer was asleep for {(b - a) / 60:.0f} min ({datetime.fromtimestamp(a, timezone.utc).isoformat()[:19]} to "
+                     f"{datetime.fromtimestamp(b, timezone.utc).isoformat()[:19]} UTC); not counted as research time", "warn")
+            if self.in_round and self.event_buffer:
+                self.db.executemany("INSERT INTO events(run_id, ts, level, message) VALUES(?,?,?,?)", self.event_buffer)
+                self.event_buffer = []
         path = self.dir / "checkpoints" / f"round_{self.state['round']:06d}.json"
         path.parent.mkdir(exist_ok=True)
         body = json.dumps(lab.jsonable(self.state), sort_keys=True)
@@ -686,12 +717,21 @@ class Controller:
                 "live_cells": len(self.live_cells("real")), "total_cells_real": len([c for c in self.cells() if c.startswith("real|")])}
 
     def elapsed(self) -> float:
+        """Active research time: wall-clock time minus periods when the computer was asleep."""
         if not hasattr(self, "_base_elapsed"):
             self._base_elapsed = float(self.state.get("elapsed_s", 0.0))
-        return self._base_elapsed + (time.time() - self.session_start)
+            self._base_suspended = float(self.state.get("suspended_s", 0.0))
+        asleep = self.monitor.suspended_s if hasattr(self, "monitor") else 0.0
+        return self._base_elapsed + (time.time() - self.session_start) - asleep
+
+    def suspended(self) -> float:
+        if not hasattr(self, "_base_suspended"):
+            self.elapsed()
+        return self._base_suspended + (self.monitor.suspended_s if hasattr(self, "monitor") else 0.0)
 
     def write_progress(self, status: str, extra: dict | None = None) -> None:
         body = {"run_id": self.cfg.run_id, "status": status, "updated_at": now(), "round": self.state["round"], "elapsed_s": self.elapsed(),
+                "suspended_s": self.suspended(), "wall_clock_s": self.elapsed() + self.suspended(),
                 "max_hours": self.cfg.max_hours, "workers": self.workers, "counts": self.counts(), "holdout_note": HOLDOUT_NOTE, **(extra or {})}
         tmp = self.dir / "progress.json.tmp"
         tmp.write_text(json.dumps(lab.jsonable(body), indent=1), encoding="utf-8")
@@ -777,6 +817,8 @@ class Controller:
         lock.write_text(str(os.getpid()))
         reason = "unknown"
         try:
+            if getattr(self, "_retro_suspended", 0) > 0:
+                self.log(f"{self._retro_suspended / 3600:.2f} h of earlier rounds were spent with the computer asleep; removed from research time", "warn")
             if hasattr(self, "_resumed_at"):
                 self.log(f"resumed from verified checkpoint at round {self._resumed_at} with code {code_version()}; any interrupted round is recomputed with the same seeds")
             self.log(f"run {self.cfg.run_id}: seed {self.cfg.seed}, up to {self.cfg.max_hours} h, {self.workers} workers. {HOLDOUT_NOTE}")
