@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS forward_registry(cid TEXT PRIMARY KEY, run_id TEXT, s
 CREATE INDEX IF NOT EXISTS ix_exp_round ON experiments(run_id, round);
 CREATE INDEX IF NOT EXISTS ix_exp_stage ON experiments(run_id, stage, passed);
 CREATE INDEX IF NOT EXISTS ix_cand_stage ON candidates(run_id, dataset, stage);
+CREATE INDEX IF NOT EXISTS ix_cand_stage_only ON candidates(run_id, stage);
+CREATE INDEX IF NOT EXISTS ix_cand_family ON candidates(run_id, dataset, tf, vintage, family);
+CREATE INDEX IF NOT EXISTS ix_cand_updated ON candidates(run_id, updated_round);
 CREATE INDEX IF NOT EXISTS ix_tasks_round ON tasks(run_id, round);
 """
 

@@ -706,10 +706,16 @@ class Controller:
             summary[ds] = {"oos_looks": len(by_ds[ds]), "stage3_passed": sum(1 for v in res.values() if v["passed"])}
         return summary
 
-    def refresh_ranking(self) -> None:
+    def refresh_ranking(self, rnd: int | None = None) -> None:
+        """Scores depend only on each candidate's own evidence, so only changed candidates need rescoring each round.
+        Statistics drift slowly for everyone as looks accumulate, so all are rescored every 25 rounds and at the end."""
         run = self.cfg.run_id
-        rows = self.db.execute("SELECT cid, stage, direction, complexity, oos, stage3, robust, max_corr_existing FROM candidates WHERE run_id=? "
-                               "AND oos IS NOT NULL", (run,)).fetchall()
+        if rnd is None or rnd % 25 == 0:
+            rows = self.db.execute("SELECT cid, stage, direction, complexity, oos, stage3, robust, max_corr_existing FROM candidates WHERE run_id=? "
+                                   "AND oos IS NOT NULL", (run,)).fetchall()
+        else:
+            rows = self.db.execute("SELECT cid, stage, direction, complexity, oos, stage3, robust, max_corr_existing FROM candidates WHERE run_id=? "
+                                   "AND updated_round=? AND oos IS NOT NULL", (run, rnd)).fetchall()
         for r in rows:
             c = {"cid": r["cid"], "stage": r["stage"], "direction": r["direction"], "complexity": r["complexity"], "oos": json.loads(r["oos"]),
                  "stage3": json.loads(r["stage3"]) if r["stage3"] else None, "robust": json.loads(r["robust"]) if r["robust"] else None,
@@ -744,10 +750,12 @@ class Controller:
             self.elapsed()
         return self._base_suspended + (self.monitor.suspended_s if hasattr(self, "monitor") else 0.0)
 
-    def write_progress(self, status: str, extra: dict | None = None) -> None:
+    def write_progress(self, status: str, extra: dict | None = None, full: bool = True) -> None:
+        if full or not hasattr(self, "_counts"):
+            self._counts = self.counts()
         body = {"run_id": self.cfg.run_id, "status": status, "updated_at": now(), "round": self.state["round"], "elapsed_s": self.elapsed(),
                 "suspended_s": self.suspended(), "wall_clock_s": self.elapsed() + self.suspended(),
-                "max_hours": self.cfg.max_hours, "workers": self.workers, "counts": self.counts(), "holdout_note": HOLDOUT_NOTE, **(extra or {})}
+                "max_hours": self.cfg.max_hours, "workers": self.workers, "counts": self._counts, "holdout_note": HOLDOUT_NOTE, **(extra or {})}
         tmp = self.dir / "progress.json.tmp"
         tmp.write_text(json.dumps(lab.jsonable(body), indent=1), encoding="utf-8")
         os.replace(tmp, self.dir / "progress.json")
@@ -881,7 +889,7 @@ class Controller:
                         continue
                     {"oos": self.apply_oos, "robust": self.apply_robust, "confirm": self.apply_confirm}.get(task["kind"], self.apply_search)(rnd, seq, task, res)
                 stats3 = self.refresh_statistics(rnd)
-                self.refresh_ranking()
+                self.refresh_ranking(rnd)
                 usage = self.monitor.drain()
                 self.db.execute("INSERT INTO resources VALUES(?,?,?,?,?,?,?,?,?)", (self.cfg.run_id, now(), rnd, usage.get("cpu_pct"), usage.get("rss_mb"),
                                                                                     usage.get("peak_rss_mb"), usage.get("sys_avail_mb"), self.workers, None))
@@ -894,13 +902,15 @@ class Controller:
                 if os.environ.get("QR_DISCOVERY_CRASH_AFTER_ROUND") == str(rnd):
                     os._exit(3)  # test hook: simulates a hard crash right after a committed round
 
-                self.write_progress("running", {"stage3": stats3, "resources": usage, "current_stage": "search and validation rounds"})
+                self.write_progress("running", {"stage3": stats3, "resources": usage, "current_stage": "search and validation rounds"}, full=rnd % 10 == 0)
                 if rnd % 10 == 0:
-                    c = self.counts()
+                    c = self._counts
                     self.log(f"round {rnd}: {c['experiments']} experiments, {c['hypotheses']} hypotheses, stages {c['stages_real']}, "
                              f"null {c['stages_null']}, {usage.get('cpu_pct', 0):.0f}% CPU, {usage.get('rss_mb', 0):.0f} MB")
                 if rnd % 50 == 0:
                     self.interim_report()
+            self.refresh_ranking()
+            self.db.commit()
             self.log(f"stopping: {reason}")
         except BaseException:
             # Mid-round failure: discard the round's uncommitted writes. Resume recomputes it.
