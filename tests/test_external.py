@@ -154,3 +154,8 @@ def test_cross_returns_are_causal_and_skip_absent_markets():
     assert out.xagusd_corr.iloc[-1] == pytest.approx(1.0)
     cut = store.cross_returns(bars.iloc[:100].reset_index(drop=True), ["xagusd"])
     assert np.allclose(out.iloc[:100], cut, equal_nan=True)
+
+
+def test_gdelt_plain_text_reply_gives_a_readable_error():
+    with pytest.raises(ValueError, match="one every 5 seconds"):
+        src.parse_gdelt(b"Please limit requests to one every 5 seconds")

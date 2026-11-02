@@ -199,7 +199,7 @@ def fetch_cross(symbol: str, timeframe: str = "h1", start: str = "2003-05-01", e
     return target
 
 
-def fetch_news_gdelt(query: str = "gold price OR federal reserve", max_records: int = 250, getter=http_get) -> pd.DataFrame:
+def fetch_news_gdelt(query: str = '("gold price" OR "federal reserve" OR "gold market")', max_records: int = 250, getter=http_get) -> pd.DataFrame:
     """Recent headlines. Optional input: coverage is partial and starts in 2017 at the earliest."""
     url = ("https://api.gdeltproject.org/api/v2/doc/doc?format=json&mode=artlist&sort=datedesc"
            f"&maxrecords={max_records}&query={urllib.parse.quote(query)}")
@@ -207,7 +207,11 @@ def fetch_news_gdelt(query: str = "gold price OR federal reserve", max_records: 
 
 
 def parse_gdelt(raw: bytes) -> pd.DataFrame:
-    articles = json.loads(raw).get("articles", [])
+    try:
+        articles = json.loads(raw).get("articles", [])
+    except ValueError as exc:
+        # GDELT answers errors and its one-request-per-5-seconds limit in plain text.
+        raise ValueError(f"GDELT did not return data: {raw[:160].decode('utf-8', 'replace').strip()}") from exc
     if not articles:
         return pd.DataFrame(columns=["published_ts", "ingested_ts", "title", "url", "domain", "source", "language"])
     frame = pd.DataFrame(articles)
