@@ -51,6 +51,7 @@ integration, and one dashboard.
 34. [Recovery and troubleshooting](#34-recovery-and-troubleshooting)
 35. [Project rules](#35-project-rules)
 36. [History](#36-history)
+37. [Autonomous strategy discovery](#37-autonomous-strategy-discovery)
 
 ---
 
@@ -262,7 +263,8 @@ QuantResearch/
     ├── decision/                   engine
     ├── risk/                       engine
     ├── execution/                  broker, mt5_adapter, router, secrets, paper_session
-    ├── api/                        server, services
+    ├── discovery/                  autonomous strategy discovery (research only; see Section 37)
+    ├── api/                        server, services, discovery_api
     └── (first generation)          market_data, ingestion, session_audit, data_catalog, data_sources,
                                     dukascopy_download, data_manifest, resample, coverage_audit, data_quality,
                                     consolidate, raw_validator, historical_gold, quality_pipeline, parquet_audit,
@@ -625,6 +627,7 @@ All on `http://127.0.0.1:8000`.
 | Terminal | `GET /api/terminal`; `POST /api/terminal/order`, `/approve`, `/decline/{fp}`, `/close/{ticket}`, `/mode/{mode}`, `/activate-live`, `/deactivate-live` |
 | Risk | `GET /api/risk`; `PUT /api/risk/limits`; `POST /api/risk/size`, `/emergency-stop`, `/emergency-clear`, `/clear-lockout` |
 | Audit | `GET /api/performance`, `/api/audit` |
+| Discovery (read-only) | `GET /api/discovery/runs`, `/status`, `/candidates?group=`, `/candidate/{cid}`, `/distribution`, `/report` |
 
 ---
 
@@ -638,6 +641,7 @@ Next.js 15, React 19, TypeScript and Lightweight Charts, exported statically and
 | Market Charts | Timeframes, averages, Bollinger, BOS and CHoCH, sweeps, FVG and iFVG, session and swing levels, drawing tools |
 | Market Intelligence | Macro, COT, cross-market, FOMC calendar, news |
 | Quantitative Research | Engines, hypotheses, folds, sensitivity, statistics, search, ledger |
+| Strategy Discovery | Run status, runtime, experiments, hypotheses, rejections, families, survivors per stage beside the null market, out-of-sample distribution, folds, search methods, CPU and memory, checkpoints, qualification, and full evidence for each candidate |
 | Machine Learning | Registry, probabilities, abstention, regime, drift, training |
 | Time Machine | Experiment builder, replay controls, streaming, decisions, results, Outcome Simulator |
 | Trading Skills | All eleven, fidelity records, runs, logs, original instructions |
@@ -704,6 +708,15 @@ python -m quantresearch.timemachine.lookahead --tf m15 --start 2024-01-01 --end 
 python -m quantresearch.timemachine.viewer --tf m15 --start 2024-03-01 --end 2024-05-01   # http://127.0.0.1:8765
 python -m quantresearch.api.server                                                         # http://127.0.0.1:8000
 
+# Strategy discovery (research only)
+python -m quantresearch.discovery.store --dataset real                        # feature store, pre-holdout data only
+python -m quantresearch.discovery.controller supervise --run-id main --hours 48 --workers 3
+python -m quantresearch.discovery.controller status --run-id main
+python -m quantresearch.discovery.controller stop --run-id main              # finishes the round, checkpoints
+python -m quantresearch.discovery.controller run --run-id main --resume      # continue after a stop or crash
+python -m quantresearch.discovery.controller report --run-id main
+python -m quantresearch.execution.discovery_paper --run-id main              # forward paper trading, registered candidates only
+
 # Tests
 PYTHONDONTWRITEBYTECODE=1 python -m pytest tests
 cd frontend && npx tsc --noEmit && npx next build
@@ -717,8 +730,9 @@ cd frontend && node e2e/run.mjs http://127.0.0.1:8123
 
 | Suite | Result | Date |
 |---|---|---|
-| Project tests (`pytest tests`) | **405 passed** | 2026-11-02 |
-| Browser workflows (`e2e/run.mjs`) | **31 of 31 passed** | 2026-11-02 |
+| Project tests (`pytest tests`) | **434 passed** (405 existing + 29 discovery) | 2026-11-02 |
+| Discovery tests after the pre-run fixes (`pytest tests/test_discovery.py`) | **30 passed** | 2026-11-02 |
+| Browser workflows (`e2e/run.mjs`) | **34 of 34 passed** | 2026-11-02 |
 | TypeScript check, production build | Passed | 2026-11-02 |
 | Upstream `day-trader-skill` suite | 315 passed | 2026-11-02 |
 | Upstream `trader-skill` suite | 175 passed | 2026-11-02 |
@@ -748,6 +762,8 @@ cd frontend && node e2e/run.mjs http://127.0.0.1:8123
 | News query rejected by GDELT | Real-data check | Corrected query and readable errors |
 | `consolidate.py` could corrupt the old archive | Phase 0 | Refuses that folder, reports duplicates |
 | Next.js security advisory | npm warning | Upgraded |
+| A limit or stop entry filled inside a bar could also take its target on that bar, though the bar cannot show which came first. One-line rules scored an out-of-sample Sharpe above 5 | A discovery smoke run produced impossible results | Opt-in `EngineConfig(intrabar_entry_target=False)`, used by discovery; the kernel matches. The seven engines use market orders and were not affected. The smoke run is archived, not deleted, and its ledger row is marked superseded |
+| `ProcessPoolExecutor(max_tasks_per_child=...)` deadlocked under spawn when a worker retired | Smoke run hung with no live workers | The whole worker pool is recycled every 12 rounds instead |
 
 ---
 
@@ -826,7 +842,116 @@ Backups: `data/raw/` and `data/warehouse/csv`, `ticks`, `bi5` are the sources. E
 
 ## 36. History
 
+- **2026-11-02** Autonomous strategy discovery added (Section 37), tested, and a 48-hour discovery run launched.
 - **2026-11-02** All phases implemented. Full M1 re-download repaired the month-end defect. Research and ML run on real data, with results above. The owner waived per-phase approval, so phases ran in one working session instead of a fresh one each. Commits are local and have not been pushed.
 - **2026-11-01** Phase 0 audit found the month-end defect, ask data in ticks, and the true nature of the original Time Machine.
 - **2026-10-30 to 31** First-generation pipeline, 2,420 Parquet files.
 - **2026-10-29** Candle schema, CSV ingestion, session audit.
+
+---
+
+## 37. Autonomous strategy discovery
+
+A research laboratory that generates its own hypotheses for XAUUSD, turns them into complete executable strategies,
+and tries hard to disprove each one. It is research only: the `discovery` package cannot import the execution, risk,
+API or broker code (a test checks the import graph), and the only way out of it is registration for **paper**
+trading. Zero qualified strategies is an acceptable result. The gates are fixed in code before any result is seen.
+
+### Validation design
+
+| Period | Use |
+|---|---|
+| 2003-05-05 to 2024-10-30 | Research data. The discovery feature store is built from this alone, so workers cannot read later bars |
+| 2024-10-30 to 2026-10-30 | **Contaminated holdout.** Examined during earlier development and defect fixes. Never used for selection. A frozen, already-qualified candidate may have one recorded confirmatory look, which can only warn, never upgrade |
+| After registration | Forward paper trading: the only genuinely unseen data |
+
+Inside the research data, candidates are produced at eight **vintage cutoffs** (2009-01-01, then every two years to
+2023-01-01). For each cutoff the search sees only the six years before it: fitness on the first four (inner train),
+selection on the last two (inner validation). Selected candidates are then **frozen** and tested only on the period
+from the cutoff to 2024-10-30, which their search never saw. Every calendar year is recorded as its own fold. The
+search scheduler is rewarded by training-window outcomes only, and seeds can come only from the same or earlier
+vintages, so out-of-sample results never shape a candidate.
+
+### Hypothesis generation
+
+| Method | What it does |
+|---|---|
+| Genetic programming | Populations of typed rule trees; tournament selection, crossover, mutation of thresholds, operators, features, windows and exit genes; immigrants, elitism, a complexity penalty, archives carried across rounds |
+| Genetic feature selection | Each task draws a feature subset; weights rise for features in candidates that pass training-window selection |
+| Bayesian optimisation | Tree-structured Parzen search over 17 market-behaviour templates: opening ranges, session sweeps, previous-day levels, squeezes, pullbacks, exhaustion, gaps, silver and dollar moves, real yields, FOMC, payrolls, momentum, session transitions, structure breaks, liquidity sweeps, calendar cells, turn of month. Templates are seeds, not limits |
+| Conditional-probability miner | Decile and pairwise cells of forward returns on training data, overlap-adjusted t, Benjamini-Hochberg within the task, mutual-information ranking. Strong cells become rules |
+| Symbolic regression | Evolves numeric expressions whose rank correlates with forward returns in training. Thresholds at training quantiles become rules |
+| Random grammar | An unguided control, to show what search adds over chance |
+| Proposals | Externally supplied specs (a person, or a language model) pass the identical pipeline. No paid API is used |
+
+Feature leaves (119 to 167 per timeframe) are scale-free and causal: momentum, trend, oscillators, volatility and
+squeezes, bar shape, structure and sweeps, previous day and week levels, Asian, London and New York opening ranges,
+gaps and shocks, spreads and activity, calendar and sessions, higher-timeframe states from closed bars only,
+silver, euro, yen, dollar-index and Treasury-bond moves and divergences, the gold/silver ratio, real yields, the
+curve, breakevens, VIX, FOMC and approximate payroll timing, and COT positioning. **CPI, PCE, payrolls,
+unemployment, GDP and the broad dollar index are excluded**, because only revised values are available. The
+validator refuses them.
+
+### Strategy format
+
+Every candidate is a JSON document (`discovery/spec.py`): timeframe, direction (long, short or both), long and short
+conditions, regime filter, no-trade conditions, sessions, entry (market, stop or limit with offset and expiry), stop
+(ATR or swing), target (none, R multiple or ATR), exits (time, condition, trailing, breakeven, trading-day end, flip),
+guards (spread, FOMC) and sizing. Conditions use whitelisted, backward-looking operators only. Nothing is ever
+executed as code. Canonical hashing removes duplicates, and identical trade sequences are flagged as equivalent.
+
+### Execution
+
+A compiled kernel (`discovery/kernel.py`, numba) applies the event engine's rules exactly. A parity test checks it
+trade by trade against `sim.engine.Engine` under several cost cases and every entry and exit type. The difference is
+below 1e-9 per ounce. Costs are the observed bid and ask, plus scenarios with a wider spread, slippage, commission,
+a one-bar delay and a trade-through rule for limits. **Financing is charged** in every scenario except one labelled
+`no_swap`, from an assumed model: a long pays fed funds + 2.5 %, a short pays max(0, 2.5 % - fed funds), per night.
+A limit or stop entry filled inside a bar may be stopped on that bar but may not reach its target on it.
+
+### Stages and gates
+
+| Stage | Gate (thresholds in `validate.GATES`) |
+|---|---|
+| 1 Screen (inner train) | Valid, at least 40 trades, positive expectancy after costs, exposure under 90 %, no single trade over half the profit |
+| Selection (inner validation) | At least 20 trades, positive expectancy and Sharpe; diverse picks, at most 3 per task, at most 2 per structural family per timeframe and vintage |
+| 2 Walk-forward (frozen) | At least 50 trades, positive expectancy, at least half the years positive, first two years positive |
+| 3 Statistics | Benjamini-Hochberg over **every** out-of-sample look at q 0.05 (Newey-West t); deflated Sharpe at least 0.95 with the look count as trials; PBO at most 0.5 by CSCV; Sharpe above the 95th percentile of null-market candidates; block-bootstrap Sharpe interval above zero |
+| 4 Robustness | Positive under a wider spread, stress costs and delay; +-15 % perturbation of every parameter (70 % still positive, median Sharpe at least half); volatility and trend regimes; both sides independently; at least 60 % of years positive and no year over half the profit; feature-dependency report |
+| 5 Adversarial | Survives removing the top 5 % of trades; alpha beyond gold's daily drift (Newey-West); works after six months of falling gold; beats random entries with the same exits and signal counts (p < 0.05); timing placebo reported |
+| 6 Confirmation | Authoritative event engine on signal bars, and on M1 execution bars year by year |
+
+Passing stage 6 means **qualified for controlled paper trading only**. As more candidates are looked at, the
+statistical bar rises, and a candidate can lose a status it held earlier.
+
+**Null-market calibration.** The identical pipeline also runs on sign-randomised markets. Every bar keeps its real
+size, wicks, spread, activity and timing, but each move's direction is a coin flip, so no rule can have an edge.
+How often candidates survive there measures the pipeline's own false-positive rate, and it feeds the null gate.
+
+**Ranking.** Stage first, always. Within a stage, a score combines out-of-sample expectancy, confidence, deflated
+Sharpe, drawdown, sample size, fold consistency, parameter stability and cost sensitivity, with penalties for regime
+concentration, complexity, single-feature dependence, correlation with the seven existing engines, one-sided
+performance, and timing that does not matter. A large return cannot compensate for a failed gate.
+
+### Controller
+
+Synchronous rounds of parallel tasks, applied in task order, with seeds derived from the run seed, round and task, so
+a run gives the same results on any worker count. Each round's results commit in one transaction together with a
+verified checkpoint, so a crash loses only the round in progress, which is recomputed identically on resume. Tests
+check identical results for one and two workers, after a clean interruption, and after a hard kill mid-round.
+Safeguards: a memory guard that pauses work or sheds workers, below-normal priority, pool recycling, task timeouts,
+sleep prevention, Ctrl+C or a `STOP` file to finish the round and stop, a supervisor that resumes after a crash, a
+48-hour default limit, retirement of exhausted search cells (novelty below 2 % for four tasks with no selections),
+and a futility stop after 24 hours if nothing is statistically validated and nothing has passed walk-forward for 40
+rounds.
+
+### Where things are
+
+| Item | Location |
+|---|---|
+| Feature stores (real and null) | `data/research/discovery/store/` |
+| Every experiment, candidate definition, ancestry, fold, finding, resource sample, checkpoint and event | `data/research/discovery/runs/<run>/lab.sqlite` |
+| Checkpoints, research log, progress | `data/research/discovery/runs/<run>/checkpoints/`, `research.log`, `progress.json` |
+| Final report | `data/research/reports/discovery_<run>_latest.json` and `.html`, plus a row in `research/experiments.sqlite` |
+| Forward paper account | `data/app/discovery_paper.sqlite`, separate from the dashboard's paper account |
+| Archived smoke run from the defective build | `data/research/discovery/archive/` |
