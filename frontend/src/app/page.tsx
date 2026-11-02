@@ -4,6 +4,7 @@ import { Overview } from "@/sections/Overview";
 import { Charts } from "@/sections/Charts";
 import { Intelligence } from "@/sections/Intelligence";
 import { Research } from "@/sections/Research";
+import { Discovery } from "@/sections/Discovery";
 import { MachineLearning } from "@/sections/MachineLearning";
 import { TimeMachine } from "@/sections/TimeMachine";
 import { Skills } from "@/sections/Skills";
@@ -13,7 +14,7 @@ import { Performance } from "@/sections/Performance";
 
 const SECTIONS = [
   ["overview", "Overview", Overview], ["charts", "Market Charts", Charts], ["intel", "Market Intelligence", Intelligence],
-  ["research", "Quantitative Research", Research], ["ml", "Machine Learning", MachineLearning], ["timemachine", "Time Machine", TimeMachine],
+  ["research", "Quantitative Research", Research], ["discovery", "Strategy Discovery", Discovery], ["ml", "Machine Learning", MachineLearning], ["timemachine", "Time Machine", TimeMachine],
   ["skills", "Trading Skills", Skills], ["terminal", "Trading Terminal", Terminal], ["risk", "Risk Management", Risk], ["performance", "Performance and Audit", Performance],
 ] as const;
 

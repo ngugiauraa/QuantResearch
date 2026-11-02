@@ -69,6 +69,7 @@ class Position:
     cost_source: str = ""
     entry_spread: float = 0.0
     last_swap_day: Any = None
+    entry_intrabar: bool = False
 
 
 @dataclass
@@ -110,6 +111,10 @@ class EngineConfig:
     costs: CostModel = field(default_factory=CostModel)
     stop_first: bool = True
     allow_same_bar_exit: bool = True
+    # A limit or stop entry that fills inside a bar (not at its open) cannot know whether the bar's other extreme
+    # came before or after the fill. True keeps the original behaviour (the target may fill on that bar). False is
+    # the conservative rule: on that bar only the stop can trigger. Discovery uses False.
+    intrabar_entry_target: bool = True
     record_equity_every: int = 1
     log_signal_bars: bool = True
 
@@ -399,6 +404,9 @@ class Engine:
                 survivors.append(order)
                 continue
             self._open(order, price, lots, source, spread, i)
+            if it.kind != "market":
+                self.positions[-1].entry_intrabar = (ao > it.price) if (buy and it.kind == "limit") else (
+                    (bo < it.price) if it.kind == "limit" else ((ao < it.price) if buy else (bo > it.price)))
             order.remaining = round(order.remaining - lots, 8)
             if order.remaining >= LOT_STEP:
                 order.status = "partial"
@@ -423,6 +431,8 @@ class Engine:
                 open_, high, low = ao, ah, al
             hit_stop = pos.stop is not None and (low <= pos.stop if pos.side > 0 else high >= pos.stop)
             hit_target = pos.target is not None and (high >= pos.target if pos.side > 0 else low <= pos.target)
+            if hit_target and pos.entry_intrabar and pos.entry_time == self._ts[i] and not self.config.intrabar_entry_target:
+                hit_target = False
             if hit_stop and (not hit_target or self.config.stop_first):
                 gap = open_ <= pos.stop if pos.side > 0 else open_ >= pos.stop
                 # A gap fills at the open, which can be well past the stop.

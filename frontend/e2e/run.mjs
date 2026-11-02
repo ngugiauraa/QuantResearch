@@ -7,7 +7,7 @@ const BASE = process.argv[2] ?? "http://127.0.0.1:8123";
 const SHOTS = process.argv[3];
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
-const SECTIONS = ["Overview", "Market Charts", "Market Intelligence", "Quantitative Research", "Machine Learning", "Time Machine", "Trading Skills", "Trading Terminal", "Risk Management", "Performance and Audit"];
+const SECTIONS = ["Overview", "Market Charts", "Market Intelligence", "Quantitative Research", "Strategy Discovery", "Machine Learning", "Time Machine", "Trading Skills", "Trading Terminal", "Risk Management", "Performance and Audit"];
 const results = [];
 const check = (name, ok, detail = "") => {
   results.push({ name, ok });
@@ -159,6 +159,13 @@ await page.getByPlaceholder("Search research").fill("reward risk stop");
 await page.getByRole("button", { name: "Rebuild index" }).click();
 await page.waitForTimeout(2500);
 check("Search returns attributed sources", (await page.locator("main").innerText()).toLowerCase().includes("documentation"));
+
+// Strategy Discovery: with no run it says how to start one; with a run it shows the stage table and candidate tabs.
+await open("Strategy Discovery");
+await page.waitForTimeout(1200);
+const disc = await page.locator("main").innerText();
+check("Strategy Discovery explains its state", disc.includes("No discovery run yet") || (disc.includes("Candidates surviving each stage") && disc.includes("Statistically validated")), disc.slice(0, 120).replace(/\s+/g, " "));
+check("Strategy Discovery says it cannot trade", disc.includes("Research only") || disc.includes("No discovery run yet"));
 
 // Narrow layout does not scroll sideways.
 await page.setViewportSize({ width: 390, height: 800 });

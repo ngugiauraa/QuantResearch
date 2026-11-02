@@ -670,6 +670,10 @@ def create_app(services: Services | None = None) -> FastAPI:
             raise HTTPException(404, "No such job")
         return ok(svc.jobs[job_id])
 
+    # ------------------------------------------------------------ strategy discovery (read-only)
+    from quantresearch.api import discovery_api
+    discovery_api.register(app, svc, ok)
+
     # ------------------------------------------------------------ the built dashboard
     built = ROOT / "frontend" / "out"
     if built.exists():
