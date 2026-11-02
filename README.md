@@ -101,7 +101,7 @@ strategy's own signal bars.
   unstable result looks like.
 - **Behavioral's** 97.6 % drawdown shows that fading shocks on M15 loses steadily to costs, not that the engine failed.
 
-**Hypothesis tests** (before the holdout, with false-discovery-rate correction across each family). Only 2 of 81 tests
+**Hypothesis tests** (before the holdout, with false-discovery-rate correction across each family). Only 2 of 57 tests
 were significant, both in the seasonal family: Friday (mean excess 5.8e-05 per hour, adjusted p 0.0016) and the Asia
 session (3.1e-05, adjusted p 0.0016). They are real statistical patterns but too small to pay the spread, which is why
 that engine loses. **Statistical significance is not profitability.**
