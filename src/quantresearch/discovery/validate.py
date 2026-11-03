@@ -145,6 +145,15 @@ def stage3(pool: list[dict], null_sharpes: dict[str, list[float]]) -> dict[str, 
     pvals = [p for _, p in tp]
     _, p_bh, _, _ = multipletests(pvals, alpha=GATES["fdr_q"], method="fdr_bh")
     trial_daily = [c["sharpe"] / np.sqrt(252) for c in pool]
+    # The deflated-Sharpe benchmark depends only on the set of trials, so it is computed once for everyone
+    # (identical to research.stats.deflated_sharpe, which would recompute it per candidate).
+    trials = np.asarray([x for x in trial_daily if np.isfinite(x)], dtype="float64")
+    if len(trials) < 2 or trials.std(ddof=1) == 0:
+        expected_max = 0.0
+    else:
+        gamma = 0.5772156649
+        z1, z2 = sps.norm.ppf(1 - 1 / len(trials)), sps.norm.ppf(1 - 1 / (len(trials) * np.e))
+        expected_max = float(trials.std(ddof=1) * ((1 - gamma) * z1 + gamma * z2))
     pooled_null = [s for v in null_sharpes.values() for s in v]
     groups: dict[tuple, list[int]] = {}
     for i, c in enumerate(pool):
@@ -163,7 +172,7 @@ def stage3(pool: list[dict], null_sharpes: dict[str, list[float]]) -> dict[str, 
         if not c["stage2_passed"]:
             continue
         r = c["rets"]
-        dsr = rstats.deflated_sharpe(r, trial_daily)
+        dsr = {"trials": int(len(trials)), "expected_max_sr": expected_max, "dsr": rstats.probabilistic_sharpe(r, expected_max)}
         nulls = null_sharpes.get(c["tf"], [])
         nulls = nulls if len(nulls) >= GATES["null_min_samples"] else pooled_null
         null_q = float(np.quantile(nulls, GATES["null_quantile"])) if len(nulls) >= GATES["null_min_samples"] else None
