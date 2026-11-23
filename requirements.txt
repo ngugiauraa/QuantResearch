@@ -13,6 +13,7 @@ psutil>=7.2
 fastapi>=0.162
 uvicorn[standard]>=0.54
 keyring>=25.7
+PyJWT[crypto]>=2.8   # verifies the Cloudflare Access token (api/cf_access.py); pulls in cryptography
 MetaTrader5>=5.0.6231; sys_platform == "win32"
 # Tests
 pytest>=9.2

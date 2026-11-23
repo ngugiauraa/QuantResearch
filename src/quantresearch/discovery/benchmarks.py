@@ -1,4 +1,4 @@
-"""Daily returns of the seven existing strategy engines over the research period, at their default parameters.
+"""Daily returns of every registered strategy engine over the research period, at their default parameters.
 
 Used only to measure how correlated a discovered candidate is with what the platform already had. Seasonal
 selects its cells on 2003-2008 data. Nothing here reads the holdout.
@@ -43,6 +43,29 @@ def compute(task: dict) -> dict:
 
 def load(path: Path) -> pd.DataFrame | None:
     return pd.read_parquet(path) if Path(path).exists() else None
+
+
+def registered_engines() -> list[str]:
+    from quantresearch.strategies import registry
+    return sorted(registry.REGISTRY)
+
+
+def stale_cache_warning(table: pd.DataFrame | None, path: Path | str) -> str | None:
+    """A message if the cached benchmark table lacks any engine registered now, otherwise None.
+
+    The table is written once per run and reused, so it goes stale when an engine is added (or when one failed to
+    compute, which the benchmarks log line reports). The file to delete is the benchmark table itself:
+    experiments.sqlite is the research ledger and must be kept.
+    """
+    if table is None:
+        return None
+    engines = registered_engines()
+    missing = sorted(set(engines) - set(table.columns))
+    if not missing:
+        return None
+    return (f"Stale benchmark cache detected: {path} holds {len(table.columns)} engines but {len(engines)} are registered "
+            f"(missing: {', '.join(missing)}). Delete that file (not experiments.sqlite, which is the research ledger) "
+            f"and rerun to get accurate baselines for all {len(engines)} engines.")
 
 
 def max_abs_correlation(days_ns, rets, table: pd.DataFrame | None) -> tuple[float | None, dict]:

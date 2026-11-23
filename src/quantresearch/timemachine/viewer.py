@@ -12,6 +12,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from quantresearch.timemachine.replay import ReplaySession
+from quantresearch.warehouse.store import friendly_warehouse_errors
 
 PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><title>Replay Viewer</title>
 <style>
@@ -140,6 +141,7 @@ def serve(session: ReplaySession, port: int = 8765, host: str = "127.0.0.1") -> 
     return ThreadingHTTPServer((host, port), make_handler(ViewerState(session)))
 
 
+@friendly_warehouse_errors
 def main() -> None:
     from quantresearch.features.registry import build_features
     from quantresearch.sim.reference import SmaCross

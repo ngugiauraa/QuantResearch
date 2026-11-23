@@ -852,13 +852,17 @@ class Controller:
             self.monitor.start()
             bench_path = self.dir / "benchmarks.parquet"
             if self.cfg.benchmarks and not bench_path.exists():
-                self.log("computing the seven existing engines' daily returns, for correlation")
+                from quantresearch.discovery.benchmarks import registered_engines
+                self.log(f"computing the {len(registered_engines())} existing engines' daily returns, for correlation")
                 res = self.run_tasks([{"task_id": f"{self.cfg.run_id}-benchmarks", "kind": "benchmarks", "dataset": "real", "tf": "h1", "seed": 0,
                                        "out": str(bench_path), "params": {}}], timeout=3600)
                 r = next(iter(res.values()))
                 self.log(f"benchmarks: {r.get('engines')} errors {r.get('errors') or r.get('error')}")
-            from quantresearch.discovery.benchmarks import load
+            from quantresearch.discovery.benchmarks import load, stale_cache_warning
             self.benchmarks = load(bench_path)
+            stale = stale_cache_warning(self.benchmarks, bench_path)
+            if stale:
+                self.log(stale, "warning")
             tasks_per_round = self.cfg.tasks_per_round or 8
             while True:
                 reason = self.stop_reason()

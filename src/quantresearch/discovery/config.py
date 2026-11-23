@@ -97,7 +97,7 @@ class DiscoveryConfig:
     futility_window_rounds: int = 40
     exhaustion_novelty: float = 0.02
     risk_pct: float = 0.5
-    benchmarks: bool = True                 # correlate candidates with the seven existing engines
+    benchmarks: bool = True                 # correlate candidates with the existing engines
     store_dir: str | None = None            # feature store override, used by tests
     holdout_start: str = str(HOLDOUT_START.date())
 

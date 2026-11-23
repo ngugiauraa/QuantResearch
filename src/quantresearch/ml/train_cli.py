@@ -14,8 +14,10 @@ from quantresearch.features.registry import build_features
 from quantresearch.ml import pipeline as ml
 from quantresearch.research.experiment import dataset_version
 from quantresearch.warehouse.store import load_bars
+from quantresearch.warehouse.store import friendly_warehouse_errors
 
 
+@friendly_warehouse_errors
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tf", default="h1")

@@ -1,8 +1,19 @@
 name: Deploy dashboard to Cloudflare Pages
 
+# IF YOU CONNECTED THE REPO DIRECTLY TO CLOUDFLARE PAGES (Pages dashboard > Connect to Git), DISABLE OR DELETE THIS WORKFLOW.
+# Cloudflare then builds and deploys automatically on every push, so keeping this workflow would deploy twice. (A Pages project
+# is either Git-connected or direct-upload, so this workflow cannot upload to a Git-connected project anyway.)
+# Only keep this workflow if you are NOT using Cloudflare's Git integration.
+# With the Git integration the build settings are: Framework preset Next.js (Static HTML Export), build command
+# "cd frontend && npm install && npm run build", build output directory "frontend/out", and NEXT_PUBLIC_API_URL set as a
+# build variable in the Pages dashboard (Settings > Variables and Secrets).
+
 # One-time setup, in the GitHub repository settings:
-#   Secrets   CLOUDFLARE_API_TOKEN (permission: Cloudflare Pages - Edit) and CLOUDFLARE_ACCOUNT_ID
-#   Variable  NEXT_PUBLIC_API_URL  (the Cloudflare Tunnel address of the API; see config/cloudflare-tunnel/README.md)
+#   Secrets   CLOUDFLARE_API_TOKEN (permission: Cloudflare Pages - Edit), CLOUDFLARE_ACCOUNT_ID, and
+#             NEXT_PUBLIC_API_URL (the tunnel hostname of the API; see config/cloudflare-tunnel/README.md)
+# Why NEXT_PUBLIC_API_URL is a GitHub secret and not a Cloudflare Pages dashboard variable: this workflow builds the site
+# here and uploads the finished files, and Pages dashboard variables are only read when Cloudflare itself runs the build.
+# Either way the value is compiled into the site's JavaScript, so the site MUST be behind Cloudflare Access (README section 1).
 # The Pages project is created on the first deploy if it does not exist yet.
 
 on:
@@ -39,14 +50,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "::error::Add the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets, then re-run."
             exit 1
           fi
           if [ -z "$NEXT_PUBLIC_API_URL" ]; then
-            echo "::error::Add the NEXT_PUBLIC_API_URL repository variable. Without it the hosted dashboard would call itself, not your API."
+            echo "::error::Add the NEXT_PUBLIC_API_URL repository secret. Without it the hosted dashboard would call itself, not your API."
             exit 1
           fi
 
@@ -56,7 +67,7 @@ jobs:
 
       - name: Build the static export
         env:
-          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
         run: npm run build
 
       - name: Deploy to Cloudflare Pages

@@ -19,5 +19,7 @@ node_modules/
 .next/
 frontend/out/
 frontend/next-env.d.ts
+frontend/.env.local
+frontend/.env.*.local
 frontend/tsconfig.tsbuildinfo
 data/*.log
