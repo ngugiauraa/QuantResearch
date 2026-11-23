@@ -8,10 +8,11 @@ from __future__ import annotations
 import pandas as pd
 
 from quantresearch.features.microstructure import microstructure_features
+from quantresearch.features.regime import regime_features
 from quantresearch.features.structure import structure_features
 from quantresearch.features.technical import technical_features
 
-FEATURE_VERSION = "v2"
+FEATURE_VERSION = "v3"
 
 DEFINITIONS: dict[str, tuple[str, int]] = {
     "ret_1": ("close / previous close - 1", 1),
@@ -62,6 +63,8 @@ DEFINITIONS: dict[str, tuple[str, int]] = {
     "activity": ("M1 bars with quotes inside this bar", 0), "volume_ratio": ("volume / mean volume, 60 bars", 59),
     "quote_imbalance": ("(ask volume - bid volume) / total", 0), "amihud": ("|logret_1| / volume, a price-impact proxy", 1),
     "liquidity": ("volume / spread", 0), "vol_cluster": ("autocorrelation of |logret_1|, 60 bars", 61),
+    "regime": ("0 unclassified, 1 trending up, 2 trending down, 3 ranging, 4 volatile; trailing data only. "
+               "See features/regime.py", 218),
 }
 
 
@@ -72,7 +75,8 @@ def build_features(bars: pd.DataFrame) -> pd.DataFrame:
     technical = technical_features(bars)
     structure = structure_features(bars, atr=technical["atr_14"])
     micro = microstructure_features(bars)
-    return pd.concat([bars, technical, structure, micro], axis=1)
+    regime = regime_features(technical)
+    return pd.concat([bars, technical, structure, micro, regime], axis=1)
 
 
 def feature_columns() -> list[str]:
