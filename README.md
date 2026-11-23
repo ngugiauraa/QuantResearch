@@ -1005,7 +1005,7 @@ How often candidates survive there measures the pipeline's own false-positive ra
 
 **Ranking.** Stage first, always. Within a stage, a score combines out-of-sample expectancy, confidence, deflated
 Sharpe, drawdown, sample size, fold consistency, parameter stability and cost sensitivity, with penalties for regime
-concentration, complexity, single-feature dependence, correlation with the seven existing engines, one-sided
+concentration, complexity, single-feature dependence, correlation with the existing engines (benchmark table: `benchmarks.parquet` in the run folder; a stale-cache warning appears if it predates an engine), one-sided
 performance, and timing that does not matter. A large return cannot compensate for a failed gate.
 
 ### Controller
