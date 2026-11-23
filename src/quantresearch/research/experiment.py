@@ -28,6 +28,7 @@ from quantresearch.sim.costs import CostModel, scenarios
 from quantresearch.sim.engine import Engine, EngineConfig
 from quantresearch.strategies import registry
 from quantresearch.strategies.base import SignalStrategy, StrategyDef, attach_signals, forward_return
+from quantresearch.warehouse.store import friendly_warehouse_errors
 
 
 @dataclass(frozen=True)
@@ -322,6 +323,7 @@ def load_research_frame(defn: StrategyDef, start=None, end=None, p: Paths | None
     return frame
 
 
+@friendly_warehouse_errors
 def main() -> None:
     ap = argparse.ArgumentParser(description="Run strategy research reports.")
     ap.add_argument("names", nargs="*", help="Strategy names; all seven if omitted.")

@@ -5,6 +5,8 @@ unfinished bar. Ticks and S1 bars are decoded from original files on demand.
 """
 from __future__ import annotations
 
+import functools
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -15,6 +17,39 @@ import pandas as pd
 from quantresearch.core import timeframes as tfs
 from quantresearch.core.config import Paths, paths
 from quantresearch.warehouse import dukascopy as dk
+
+
+class WarehouseNotBuilt(FileNotFoundError):
+    """No bars exist for a timeframe. A FileNotFoundError, so existing handlers keep working, with the fix in the message."""
+
+
+def not_built_message(tf: str, base: Path, p: Paths) -> str:
+    have_m1 = any((p.bars / "m1").glob("year=*/month=*/bars.parquet")) if (p.bars / "m1").exists() else False
+    head = f"No {tf} bars have been built under {base}.\n"
+    if tf != "m1" and have_m1:
+        steps = ("The M1 bars exist, so build the higher timeframes from them (from the repository root, with PYTHONPATH=src):\n"
+                 "  python -m quantresearch.warehouse.build --start 2003-05")
+    else:
+        steps = ("There is no warehouse data yet. Build it with these commands, from the repository root with PYTHONPATH=src:\n"
+                 "  1. python -m quantresearch.warehouse.fetch_months m1 --workers 2   (downloads about 280 monthly files)\n"
+                 "  2. python -m quantresearch.warehouse.build --start 2003-05          (builds every timeframe from M1)\n"
+                 "  3. python -m quantresearch.warehouse.audit                          (completeness check)\n"
+                 "  4. python -m quantresearch.external.store                           (macro and cross-market data some strategies use)\n"
+                 "The download takes a long time and depends on your connection, but it is resumable: rerun the same command to continue.\n"
+                 "The optional tick download (fetch_months tick) is separate and is not needed for bars; see README section 9.")
+    return head + steps
+
+
+def friendly_warehouse_errors(func):
+    """For command-line entry points: print the fix and exit 1 instead of a traceback when no bars are built."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except WarehouseNotBuilt as exc:
+            sys.stderr.write(f"{exc}\n")
+            raise SystemExit(1) from None
+    return wrapper
 
 
 def _ts(value) -> pd.Timestamp | None:
@@ -41,7 +76,7 @@ def load_bars(tf: str, start=None, end=None, as_of=None, p: Paths | None = None)
     start, end, as_of = _ts(start), _ts(end), _ts(as_of)
     base = p.bars / tf
     if not any(base.glob("year=*/month=*/bars.parquet")) if base.exists() else True:
-        raise FileNotFoundError(f"No bars built for {tf} under {base}")
+        raise WarehouseNotBuilt(not_built_message(tf, base, p))
     pattern = _sql_path(base) + "/year=*/month=*/bars.parquet"
     where, params = [], []
     if start is not None:

@@ -63,7 +63,28 @@ Run from the repository root in Git Bash:
 source venv/Scripts/activate
 python -m pip install -r requirements-lock.txt      # exact versions; requirements.txt lists direct ones
 (cd frontend && npm install && npx next build)      # builds the dashboard once
+```
 
+### First-time data setup
+
+The market data is not in the repository (`data/` is git-ignored), so a fresh clone has none. Research commands, the Time Machine
+and the dashboard charts need it, and without it they stop with a message pointing here. Build it once, in this order
+(each step can be interrupted and rerun, and continues where it left off):
+
+```bash
+PYTHONPATH=src python -m quantresearch.warehouse.fetch_months m1 --workers 2   # downloads about 280 monthly M1 files
+PYTHONPATH=src python -m quantresearch.warehouse.build --start 2003-05         # builds M1 to MN1 bars from them
+PYTHONPATH=src python -m quantresearch.warehouse.audit                         # completeness report
+PYTHONPATH=src python -m quantresearch.external.store                          # macro and cross-market data
+```
+
+The download is the slow part and depends on your connection; there is no fixed time estimate for the M1 download. The optional tick
+download (`fetch_months tick`, roughly 10 minutes per month and about 15 hours in total) is separate and **not needed** for bars; see
+[Section 9](#9-data-sources-and-coverage). To keep the data somewhere else, set `QR_DATA_ROOT`.
+
+### Start the server
+
+```bash
 PYTHONPATH=src python -m quantresearch.api.server   # then open http://127.0.0.1:8000
 ```
 
@@ -775,7 +796,7 @@ python -m quantresearch.warehouse.audit                              # completen
 python -m quantresearch.external.store                               # refresh external data
 
 # Research
-python -m quantresearch.research.experiment                          # all seven, or name some
+python -m quantresearch.research.experiment                          # all eight, or name some
 python -m quantresearch.ml.train_cli --tf h1 --end 2024-10-30
 python -m quantresearch.timemachine.lookahead --tf m15 --start 2024-01-01 --end 2024-07-01 "2024-03-29 00:00"
 

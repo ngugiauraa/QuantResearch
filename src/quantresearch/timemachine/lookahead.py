@@ -22,6 +22,7 @@ import pandas as pd
 
 from quantresearch.features.registry import build_features
 from quantresearch.sim.engine import Engine, EngineConfig, Strategy
+from quantresearch.warehouse.store import friendly_warehouse_errors
 
 # Events a fill or exit produces while handling the bar that opens at T.
 EXECUTION_EVENTS = {"fill", "partial_fill", "order_expired"}
@@ -132,6 +133,7 @@ def run_on_warehouse(tf: str, start: str, end: str, cutoffs: list[str], strategy
     return [check(execution, signals, factory, cut).as_dict() for cut in cutoffs]
 
 
+@friendly_warehouse_errors
 def main() -> None:
     ap = argparse.ArgumentParser(description="Run the look-ahead integrity test on real data.")
     ap.add_argument("--tf", default="m15")
