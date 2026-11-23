@@ -6,6 +6,7 @@ mode, which can read but not trade until the owner activates live trading. Nothi
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import uuid
@@ -27,6 +28,8 @@ from quantresearch.skills.registry import SkillLog
 from quantresearch.timemachine import orchestrate as orch
 from quantresearch.timemachine.replay import ReplaySession
 from quantresearch.warehouse import store as bars
+
+log = logging.getLogger(__name__)
 
 
 class Services:
@@ -95,6 +98,41 @@ class Services:
             ask = latest["ask_close"]
             self.broker.on_quote(float(latest["bid_close"]), float(ask if ask == ask else latest["bid_close"]), str(latest["close_ts"]))
         return {"source": "stored_history_not_live", "time": str(latest["close_ts"]), "bid": latest["bid_close"], "ask": latest["ask_close"]}
+
+    def recent_signals(self, window: int = 500, tail: int = 48) -> list[dict]:
+        """The latest entry signal of each engine, computed on that engine's own signal timeframe.
+
+        An engine's rule is defined for its timeframe (Behavioral on M15, London Open on M5), so running it
+        on other bars gives results that mean nothing. `tail` is counted in that engine's own bars.
+        Engines that need a fit or cross-market data are skipped, and so is any engine whose bars are not built.
+        """
+        from quantresearch.strategies import REGISTRY
+
+        frames: dict[str, pd.DataFrame | None] = {}
+        found: list[dict] = []
+        for name, defn in REGISTRY.items():
+            if defn.fit or defn.needs:
+                continue
+            tf = defn.signal_tf
+            if tf not in frames:
+                try:
+                    frames[tf] = self.feature_window(tf, window)
+                except FileNotFoundError:
+                    frames[tf] = None
+            frame = frames[tf]
+            if frame is None:
+                continue
+            try:
+                signals = defn.prepare(frame, defn.defaults).tail(tail)
+            except Exception:  # One engine failing must not take the whole overview down.
+                log.exception("Signals for %s on %s bars failed", name, tf)
+                continue
+            hit = signals[signals["long_entry"] | signals["short_entry"]]
+            if len(hit):
+                index = hit.index[-1]
+                found.append({"strategy": name, "timeframe": tf, "time": frame["close_ts"].iloc[index],
+                              "side": "long" if hit["long_entry"].iloc[-1] else "short"})
+        return found
 
     def feature_window(self, tf: str, limit: int, end=None) -> pd.DataFrame:
         """The most recent `limit` bars with features. Extra bars are loaded first so warm-up is complete."""

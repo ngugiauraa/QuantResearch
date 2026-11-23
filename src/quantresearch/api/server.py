@@ -140,7 +140,6 @@ def create_app(services: Services | None = None) -> FastAPI:
     def overview():
         quote = svc.refresh_paper_quote()
         latest_regime = None
-        recent_signals: list[dict] = []
         if has_bars("h1"):
             frame = svc.feature_window("h1", 500)
             usable = frame.dropna(subset=lab.REGIME_INPUTS)
@@ -149,14 +148,7 @@ def create_app(services: Services | None = None) -> FastAPI:
                 regimes = lab.predict_regimes(lab.fit_regimes(usable.iloc[:-1]), usable.tail(1))
                 if len(regimes):
                     latest_regime = regimes.iloc[-1].to_dict()
-            for name, defn in REGISTRY.items():
-                if defn.fit or defn.needs:
-                    continue
-                signals = defn.prepare(frame, defn.defaults).tail(48)
-                hit = signals[signals["long_entry"] | signals["short_entry"]]
-                if len(hit):
-                    index = hit.index[-1]
-                    recent_signals.append({"strategy": name, "time": frame["close_ts"].iloc[index], "side": "long" if hit["long_entry"].iloc[-1] else "short"})
+        recent_signals = svc.recent_signals()
         now = pd.Timestamp.now(tz="UTC")
         account, error = None, None
         try:
