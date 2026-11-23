@@ -1,0 +1,16 @@
+# Cloudflare Tunnel for the local API. Copy this file to %USERPROFILE%\.cloudflared\config.yml and edit the two
+# placeholders. Full steps: config/cloudflare-tunnel/README.md
+#
+# The API keeps listening on 127.0.0.1 only. cloudflared dials out to Cloudflare from this PC, so no inbound
+# port is opened. The tunnel is the only public entry point and the API has NO login of its own.
+
+tunnel: <tunnel-id-placeholder>
+# On Windows, if "~" is not expanded, write the full path: C:\Users\<you>\.cloudflared\<tunnel-id>.json
+credentials-file: ~/.cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: api.quantresearch.yourdomain.com
+    # 127.0.0.1, not "localhost": on Windows "localhost" can resolve to IPv6 first, and the API listens on IPv4 only.
+    service: http://127.0.0.1:8000
+  # Anything else that reaches the tunnel gets a 404.
+  - service: http_status:404

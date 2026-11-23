@@ -30,7 +30,7 @@ integration, and one dashboard.
 13. [Feature engineering](#13-feature-engineering)
 14. [Backtesting engine](#14-backtesting-engine)
 15. [Time Machine](#15-time-machine)
-16. [The seven strategy engines](#16-the-seven-strategy-engines)
+16. [The eight strategy engines](#16-the-eight-strategy-engines)
 17. [Research methodology](#17-research-methodology)
 18. [The eleven trading skills](#18-the-eleven-trading-skills)
 19. [Machine learning](#19-machine-learning)
@@ -67,8 +67,32 @@ python -m pip install -r requirements-lock.txt      # exact versions; requiremen
 PYTHONPATH=src python -m quantresearch.api.server   # then open http://127.0.0.1:8000
 ```
 
-The server runs locally and has no login, so it must not be exposed to a network. It starts on a simulated paper
-account. Nothing can reach a broker without the steps in [Section 23](#23-mt5-integration-and-trading-modes).
+The server runs locally and has no login, so it must not be exposed to a network (the one optional exception is the
+tunnel below, with its warnings). It starts on a simulated paper account. Nothing can reach a broker without the steps in
+[Section 23](#23-mt5-integration-and-trading-modes).
+
+### Cloud deployment (optional)
+
+The Python backend cannot move to Cloudflare: it needs the local Parquet warehouse and MetaTrader 5 on Windows. What can
+be hosted is the dashboard, with a Cloudflare Tunnel carrying its requests back to the API on your PC.
+
+> **Warning: the API has no authentication.** Treat the tunnel address as a secret and never post it publicly. Be aware
+> that `NEXT_PUBLIC_API_URL` is compiled into the dashboard's public JavaScript, so **anyone who can open the Pages
+> site can read the tunnel address.** Only deploy the Pages site if you are comfortable with that, or put
+> Cloudflare Access (a free login) in front. The safest setup is a single tunnel hostname with Access on it and no Pages
+> site; see `config/cloudflare-tunnel/README.md`. Live trading stays blocked behind [Section 23](#23-mt5-integration-and-trading-modes),
+> but the paper account and research data would be open to anyone with the address.
+
+1. **Tunnel the API.** Follow `config/cloudflare-tunnel/README.md` (install `cloudflared`, `cloudflared tunnel login`,
+   `cloudflared tunnel create quantresearch`, edit `config/cloudflare-tunnel/config.yml`, `cloudflared tunnel run quantresearch`).
+   The API still binds to `127.0.0.1`; the tunnel is the only public entry point. Start it with the dashboard's address allowed:
+   `QR_CORS_ORIGINS=https://quantresearch-dashboard.pages.dev PYTHONPATH=src python -m quantresearch.api.server`.
+2. **Host the dashboard.** In the GitHub repository settings add the secrets `CLOUDFLARE_API_TOKEN` (permission: Cloudflare
+   Pages, Edit) and `CLOUDFLARE_ACCOUNT_ID`, and the variable `NEXT_PUBLIC_API_URL` (the tunnel address). A push to `main`
+   that touches `frontend/` then builds and deploys through `.github/workflows/deploy-frontend.yml`. To deploy by hand:
+   `cd frontend && NEXT_PUBLIC_API_URL=https://api.yourdomain.com npx next build && npx wrangler pages deploy out --project-name quantresearch-dashboard`.
+
+The local workflow above is unchanged: with `NEXT_PUBLIC_API_URL` unset, the dashboard finds the API on its own.
 
 ---
 
@@ -434,6 +458,7 @@ Definitions and warm-ups for every column are in `features/registry.py`. Windows
 | Technical | Returns, log returns, momentum, volatility, TR, ATR, SMA, EMA, RSI, z-score, Bollinger, ADX and DI, Donchian (prior bars only), breakout flags, trend slope, volatility and ATR ratios |
 | Structure (project definitions) | Fractal swings, BOS, CHoCH, liquidity sweeps, equal highs and lows, premium and discount, FVG, inverse FVG, day high and low, PDH, PDL, PDC |
 | Microstructure | Spread, spread change and z-score, activity, volume ratio, quote imbalance, Amihud impact proxy, liquidity proxy, volatility clustering; tick rule, tick imbalance and tick rate on quotes |
+| Regime | `regime` (`features/regime.py`): 1 trending up, 2 trending down, 3 ranging, 4 volatile, 0 none of these, NaN during the 218-bar warm-up. A trailing-data state label used to filter strategies, not a signal. Volatile wins any overlap |
 | Macro and cross-market | Real yield, 10-year and 2-year yields, broad dollar, VIX and their changes; cross-market returns and rolling correlations; hours to FOMC. COT z-score |
 
 SMC and ICT terms have no single standard. These rules are this project's.
@@ -472,21 +497,24 @@ Inherited limit: bars are drawn independently, which removes volatility clusteri
 
 ---
 
-## 16. The seven strategy engines
+## 16. The eight strategy engines
 
 All are in `strategies/engines.py`. Each has inputs, parameters, a grid, hypotheses, causal signals, shared execution, walk-forward, cost scenarios, reports and tests.
 
 | Engine | Timeframe | Measurable rule | Regime handling | Main limitation |
 |---|---|---|---|---|
 | Mean Reversion | H1 | Fades z-score and RSI extremes to the 20-bar mean | Only with low ADX | ADX lags |
-| Trend and Momentum | H1 | Channel breakouts with average alignment and ADX | Last completed day's trend | Pays spread on breakouts |
+| Trend and Momentum | H1 | Channel breakouts with average alignment and ADX, only in the London and New York open hours, ATR in its 40th-80th trailing percentile, no late-Friday entries, 4-hour FOMC pause; 2 x ATR chandelier exit | Last completed day's trend; no entries in ranging or volatile regimes | Pays spread on breakouts; every added filter raises the backtest-luck risk |
 | Statistical Arbitrage | H1 | Residual of a rolling log regression on silver or EURUSD | Correlation stability filter | **Only the gold leg trades**: relative-value timing, not a hedged spread |
-| Behavioral | M15 | Fades return shocks and sweeps with abnormal range | Volatility rank tested | "Panic" and "FOMO" name measurements, not emotions |
+| Behavioral | M15 | Buys down-shocks and low sweeps in a structural uptrend, sells up-shocks and high sweeps in a downtrend; skips spreads over 1.5 x the 60-bar median | Trend alignment; skips the volatile regime | "Panic" and "FOMO" name measurements, not emotions |
 | ETF and Turnaround | H1 | Turn-of-month and first-notice windows; COT extremes tested | None | **ETF flows are not tested**; first notice is approximated |
 | Seasonal | H1 | Weekday-hour cells chosen on training data only | None | 120 cells searched; CPI and payroll times unavailable |
 | Overreaction and Gaps | H1 | Compares fading against following gaps and shocks | Session boundaries by closure | Weekend-open spreads are wide |
+| London Open Momentum | M5 | Mon-Thu, 07:00-08:30 UTC: first bar moving 0.3 ATR from the Asian close, traded in that direction, held 2 bars, 0.5 ATR reversal exit, 1.0 ATR stop | Session window only | A few-minute hold: costs dominate; the hypothesis is a prior, not a finding |
 
 Reports include performance by regime, session, weekday, month, year and side.
+
+**Not yet evaluated:** the revised Trend and Behavioral rules and the London Open Momentum engine were added after the results in Section 2, which describe the original rules. Their tests prove the signals are causal and behave as specified, not that they have an edge. Run `python -m quantresearch.research.experiment trend behavioral london_open_momentum` on the warehouse and judge them by the deflated Sharpe.
 
 ---
 
@@ -607,6 +635,23 @@ Rules: exits that only reduce risk are always allowed, even during an emergency 
 
 **Live activation requires all of:** `QR_LIVE_ENABLED=1`, `QR_BROKER=mt5`, the exact phrase `ENABLE LIVE TRADING AT MY OWN RISK` in this process, and a broker that allows trading. It is never saved, so a restart always falls back.
 
+**Connecting a demo account, step by step (Windows):**
+
+1. **Install the MT5 terminal** from your broker's website, open it, and log in to a **demo** account once (File > Open an Account, or use the login the broker emailed you). Leave the terminal running.
+2. **Install the Python package:** `python -m pip install MetaTrader5` (Windows only).
+3. **Set the environment variables** in the same PowerShell window you will run Python from. The login and server are on the broker's demo-account email:
+   ```powershell
+   $env:QR_BROKER = "mt5"
+   $env:QR_MT5_LOGIN = "<your demo login number>"
+   $env:QR_MT5_SERVER = "<your broker's demo server name>"
+   Set-Item -Path Env:QR_MT5_PASSWORD -Value (Read-Host "MT5 demo password" -MaskInput)
+   ```
+   These last for that window only. For something durable, store them once in Windows Credential Manager instead; the platform reads that first.
+4. **Run the read-only check:** `python -m quantresearch.execution.mt5_check` (from the repository root, with `PYTHONPATH=src`). It prints the account (login, server, demo or real, balance, leverage), a live XAUUSD quote with the spread in points and dollars, and the last five closed H1 bars, then disconnects. It cannot place orders. If your broker spells gold differently, add `--symbol XAUUSDm` (or `GOLD`); when a symbol is missing it lists the first ten the terminal has.
+5. **Only if it ends with `PASS`**, start the API (`PYTHONPATH=src python -m quantresearch.api.server`) and look at `/api/health`: the `mt5` block should read `connected`, `account_type` `demo`, with your balance and a live bid and ask. Then move on to paper trading. A `FAIL` explains what to fix; do not go further until it passes.
+
+The health block's `status` is `not_configured` when `QR_BROKER` is not `mt5` (the paper account), `disconnected` when the terminal cannot be reached, `connected` when it can, and `mock` only for the test stand-in. The check script reads the terminal and nothing else; real prices from it are not yet used by the paper broker.
+
 **Suggested path:** run read-only with `QR_BROKER=mt5` against a **demo** account, compare spreads and swap, then paper trade, then assisted on demo. Only much later consider real money, and only for a strategy that has passed.
 
 ---
@@ -661,6 +706,8 @@ Controls call real services, and there are no hardcoded statistics. Empty states
 | `QR_PORT` | 8000 | API port |
 | `QR_BROKER` | paper | Set to `mt5` to attach MT5 |
 | `QR_LIVE_ENABLED` | off | Must be `1` before live activation is possible |
+| `QR_CORS_ORIGINS` | none | Extra browser origins allowed to call the API, comma-separated (for example the Cloudflare Pages address) |
+| `NEXT_PUBLIC_API_URL` | none | Build-time, for the dashboard: the API address for a hosted copy. Compiled into public JavaScript |
 | `QR_MT5_LOGIN`, `QR_MT5_PASSWORD`, `QR_MT5_SERVER` | none | Session-only fallback. Prefer the credential store |
 | `SEC_USER_AGENT` | none | Your name and email, for SEC-based skills |
 
@@ -784,7 +831,7 @@ No external AI service is called by this platform.
 
 ## 32. Security
 
-- The API binds to `127.0.0.1` and has no authentication, so **do not expose it**. A test checks the bind address.
+- The API binds to `127.0.0.1` and has no authentication, so **do not expose it**. A test checks the bind address. The optional Cloudflare Tunnel in Section 1 is the one deliberate exception: it publishes the API, so protect it with Cloudflare Access and never share its address.
 - Credentials come from Windows Credential Manager through `keyring`, or from session variables. They are never in config files, the frontend or logs, and credential objects hide themselves when printed.
 - Anything logged passes through a redactor. A test scans tracked files for passwords, and another checks that API responses contain none.
 - The audit log has a hash chain, so an edit is detectable. The dashboard shows whether it is intact.
