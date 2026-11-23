@@ -1,8 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// In development the page runs on :3000 and the API on :8000. When built, FastAPI serves both.
-export const API = typeof window !== "undefined" && window.location.port === "3000" ? "http://127.0.0.1:8000" : "";
+// NEXT_PUBLIC_API_URL (set at build time) points a hosted copy of the dashboard, such as Cloudflare Pages, at the API.
+// Otherwise: in development the page runs on :3000 and the API on :8000, and when built locally FastAPI serves both.
+export const API: string = (
+  process.env.NEXT_PUBLIC_API_URL ??
+  (typeof window !== "undefined" && window.location.port === "3000" ? "http://127.0.0.1:8000" : "")
+).replace(/\/+$/, "");
 
 export class ApiError extends Error {}
 

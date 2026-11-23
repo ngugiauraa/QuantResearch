@@ -1,0 +1,68 @@
+name: Deploy dashboard to Cloudflare Pages
+
+# One-time setup, in the GitHub repository settings:
+#   Secrets   CLOUDFLARE_API_TOKEN (permission: Cloudflare Pages - Edit) and CLOUDFLARE_ACCOUNT_ID
+#   Variable  NEXT_PUBLIC_API_URL  (the Cloudflare Tunnel address of the API; see config/cloudflare-tunnel/README.md)
+# The Pages project is created on the first deploy if it does not exist yet.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-frontend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Check the Cloudflare settings are configured
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Add the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets, then re-run."
+            exit 1
+          fi
+          if [ -z "$NEXT_PUBLIC_API_URL" ]; then
+            echo "::error::Add the NEXT_PUBLIC_API_URL repository variable. Without it the hosted dashboard would call itself, not your API."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - name: Build the static export
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
+          command: pages deploy out --project-name=quantresearch-dashboard --branch=main

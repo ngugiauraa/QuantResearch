@@ -1,0 +1,9 @@
+# Cloudflare Pages project for the static dashboard (`next build` writes the site to ./out).
+# Deploy by hand with:  npx wrangler pages deploy out --project-name quantresearch-dashboard
+# The GitHub workflow .github/workflows/deploy-frontend.yml does the same on every push to main.
+name = "quantresearch-dashboard"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "./out"
+
+# NEXT_PUBLIC_API_URL is a BUILD-time value, so it is not set here. Give it to the build that makes ./out
+# (the GitHub repository variable of that name for the workflow, or the Pages build settings).
