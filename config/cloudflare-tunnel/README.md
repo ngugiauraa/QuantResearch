@@ -51,6 +51,13 @@ cookies (Safari by default, Chrome in some modes) will refuse the API calls. It 
    `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `NEXT_PUBLIC_API_URL` (value `https://api.quantresearch.yourdomain.com`),
    then push to `main`. It is a GitHub secret, not a Pages dashboard variable, because the workflow builds the site itself and
    Pages dashboard variables are only read when Cloudflare runs the build. Never commit the real value; `frontend/.env.local` is git-ignored.
+   > **If you connected the repo directly to Cloudflare Pages** (Pages dashboard > Connect to Git), disable or delete
+   > `.github/workflows/deploy-frontend.yml`: Cloudflare will build and deploy automatically, and keeping the workflow would deploy
+   > twice. Only keep the workflow if you are **not** using Cloudflare's Git integration. With the Git integration, use these
+   > settings and put `NEXT_PUBLIC_API_URL` in the Pages project's variables instead of a GitHub secret
+   > (Settings > Variables and Secrets, as a plain build variable):
+   > Framework preset **Next.js (Static HTML Export)**, build command `cd frontend && npm install && npm run build`,
+   > build output directory `frontend/out`. The Access applications in step 3 are unchanged.
 5. **Start the API and the tunnel.** The API must allow exactly the dashboard's origin, with credentials:
    ```bash
    export QR_CORS_ORIGINS=https://dashboard.yourdomain.com

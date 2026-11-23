@@ -1,5 +1,13 @@
 name: Deploy dashboard to Cloudflare Pages
 
+# IF YOU CONNECTED THE REPO DIRECTLY TO CLOUDFLARE PAGES (Pages dashboard > Connect to Git), DISABLE OR DELETE THIS WORKFLOW.
+# Cloudflare then builds and deploys automatically on every push, so keeping this workflow would deploy twice. (A Pages project
+# is either Git-connected or direct-upload, so this workflow cannot upload to a Git-connected project anyway.)
+# Only keep this workflow if you are NOT using Cloudflare's Git integration.
+# With the Git integration the build settings are: Framework preset Next.js (Static HTML Export), build command
+# "cd frontend && npm install && npm run build", build output directory "frontend/out", and NEXT_PUBLIC_API_URL set as a
+# build variable in the Pages dashboard (Settings > Variables and Secrets).
+
 # One-time setup, in the GitHub repository settings:
 #   Secrets   CLOUDFLARE_API_TOKEN (permission: Cloudflare Pages - Edit), CLOUDFLARE_ACCOUNT_ID, and
 #             NEXT_PUBLIC_API_URL (the tunnel hostname of the API; see config/cloudflare-tunnel/README.md)
