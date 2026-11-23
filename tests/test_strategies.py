@@ -119,7 +119,8 @@ def test_trend_entry_needs_breakout_alignment_and_adx():
     close = np.linspace(100, 110, n)
     close[-1] = 130
     df = scene(close, ema_20=120.0, ema_50=110.0, adx=30.0)
-    params = get("trend").params(channel=20, use_daily=False)
+    # This scene is a synthetic 11:00 UTC bar, so the session and volatility gates are switched off here; test_trend_gates covers them.
+    params = get("trend").params(channel=20, use_daily=False, use_session=False, use_vol_band=False)
     assert engines.prepare_trend(df, params).long_entry.iloc[-1]
     df2 = df.assign(adx=5.0)
     assert not engines.prepare_trend(df2, params).long_entry.iloc[-1]

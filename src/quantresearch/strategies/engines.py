@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from quantresearch.core import timeframes as tfs
+from quantresearch.features.regime import RANGING, VOLATILE
 from quantresearch.strategies.base import (Hypothesis, StrategyDef, daily_trend, empty_signals, rolling_rank,
                                            trading_day_position)
 from quantresearch.warehouse import calendar as cal
@@ -42,6 +43,40 @@ def hypotheses_mean_reversion(df: pd.DataFrame, p: dict) -> list[Hypothesis]:
 
 
 # ---------------------------------------------------------------- 2. Trend and momentum
+# Hours (UTC) of the H1 bars that open inside the London (07:00-09:00) and New York (13:00-15:00) opens.
+LONDON_OPEN_HOURS = (7, 8)
+NEW_YORK_OPEN_HOURS = (13, 14)
+TREND_GATE_DEFAULTS = dict(use_session=True, use_vol_band=True, atr_pct_low=0.4, atr_pct_high=0.8, no_friday_late=True,
+                           fomc_blackout_h=4.0, use_regime=True, trail_atr=2.0, trail_bars=22)
+
+
+def trend_entry_gate(df: pd.DataFrame, p: dict) -> pd.Series:
+    """True where a NEW trend entry is allowed. Exits are never gated.
+
+    Every test uses the bar's own open time or trailing data, so the gate is causal.
+    - session: the bar opens in the London or New York open window (where gold trends tend to start)
+    - volatility band: atr_14 sits between two percentiles of its trailing 500-bar history
+    - Friday: no entries on bars opening at or after 18:00 UTC, ahead of the weekend gap
+    - FOMC: no entries from 0 to `fomc_blackout_h` hours before a scheduled decision
+    - regime: no entries while the regime label is ranging or volatile (skipped if there is no label)
+    """
+    g = {**TREND_GATE_DEFAULTS, **p}
+    ts = df["ts"]
+    ok = pd.Series(True, index=df.index)
+    if g["use_session"]:
+        ok &= ts.dt.hour.isin(LONDON_OPEN_HOURS + NEW_YORK_OPEN_HOURS)
+    if g["use_vol_band"]:
+        rank = rolling_rank(df["atr_14"], 500)
+        ok &= (rank >= g["atr_pct_low"]) & (rank <= g["atr_pct_high"])
+    if g["no_friday_late"]:
+        ok &= ~((ts.dt.day_of_week == 4) & (ts.dt.hour >= 18))
+    if g["fomc_blackout_h"] > 0 and "hours_to_fomc" in df:
+        ok &= ~df["hours_to_fomc"].between(0, g["fomc_blackout_h"])
+    if g["use_regime"] and "regime" in df:
+        ok &= ~df["regime"].isin([RANGING, VOLATILE])
+    return ok
+
+
 def prepare_trend(df: pd.DataFrame, p: dict) -> pd.DataFrame:
     s = empty_signals(df)
     n = p["channel"]
@@ -51,12 +86,20 @@ def prepare_trend(df: pd.DataFrame, p: dict) -> pd.DataFrame:
     align = daily_trend(df) if p["use_daily"] else pd.Series(0.0, index=df.index)
     long_ok = (align >= 0) if not p["use_daily"] else (align > 0)
     short_ok = (align <= 0) if not p["use_daily"] else (align < 0)
-    s["long_entry"] = (df["close"] > upper) & (df["ema_20"] > df["ema_50"]) & strong & long_ok
-    s["short_entry"] = (df["close"] < lower) & (df["ema_20"] < df["ema_50"]) & strong & short_ok
+    allowed = trend_entry_gate(df, p)
+    s["long_entry"] = (df["close"] > upper) & (df["ema_20"] > df["ema_50"]) & strong & long_ok & allowed
+    s["short_entry"] = (df["close"] < lower) & (df["ema_20"] < df["ema_50"]) & strong & short_ok & allowed
     s["stop_dist"] = p["stop_atr"] * df["atr_14"]
     s["max_hold"] = p["max_hold"]
-    s["exit_long"] = df["close"] < df["ema_50"]
-    s["exit_short"] = df["close"] > df["ema_50"]
+    # Chandelier trailing exit: close back through the trailing high (low) by trail_atr x ATR. It is a causal
+    # stand-in for a per-trade trailing stop, which a column generator cannot track, and it tightens as the
+    # trend extends instead of waiting for the slow EMA 50 cross.
+    g = {**TREND_GATE_DEFAULTS, **p}
+    window = int(g["trail_bars"])
+    peak = df["high"].rolling(window, min_periods=window).max()
+    trough = df["low"].rolling(window, min_periods=window).min()
+    s["exit_long"] = df["close"] < peak - g["trail_atr"] * df["atr_14"]
+    s["exit_short"] = df["close"] > trough + g["trail_atr"] * df["atr_14"]
     return s
 
 
@@ -301,11 +344,16 @@ DEFINITIONS = [
                 "Fades z-score and RSI extremes back to the 20-bar mean in low-ADX regimes, with an ATR stop and time exit.",
                 ["ADX is a lagging regime proxy.", "Trending years can erase many small wins."]),
     StrategyDef("trend", "Trend Following and Momentum", "h1",
-                dict(channel=55, adx_min=20.0, use_daily=True, stop_atr=2.0, max_hold=480),
+                dict(channel=55, adx_min=20.0, use_daily=True, stop_atr=2.0, max_hold=480, **TREND_GATE_DEFAULTS),
                 dict(channel=[20, 55, 100], adx_min=[15.0, 20.0, 30.0], use_daily=[True, False]),
                 prepare_trend, hypotheses_trend,
-                "Enters channel breakouts confirmed by average alignment, ADX and the last completed day's trend. Exits on a slow-average cross or stop.",
-                ["Breakout entries pay spread at the worst moments.", "Gold's long bull runs flatter long-side trend tests."]),
+                "Enters channel breakouts confirmed by average alignment, ADX and the last completed day's trend, only in the London and "
+                "New York open hours, with ATR in its 40th-80th trailing percentile, no late-Friday entries, a 4-hour FOMC pause and no "
+                "ranging or volatile regime. Exits on a 2 x ATR chandelier trail or the initial stop.",
+                ["Breakout entries pay spread at the worst moments.", "Gold's long bull runs flatter long-side trend tests.",
+                 "The session, percentile and blackout gates are priors from market structure, not fitted values, but every added "
+                 "filter cuts the trade count and raises the chance of a lucky backtest. Check the deflated Sharpe, not the raw one.",
+                 "The trailing exit is a chandelier on the last 22 bars, not a stop that ratchets from each trade's entry."]),
     StrategyDef("stat_arb", "Statistical Arbitrage", "h1",
                 dict(leg="xagusd", window=720, z_entry=2.0, z_exit=0.5, corr_min=0.5, stop_atr=3.0, max_hold=240),
                 dict(leg=["xagusd", "eurusd"], z_entry=[1.5, 2.0, 2.5], window=[480, 720]),
