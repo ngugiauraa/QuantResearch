@@ -169,16 +169,33 @@ def behavioral_measures(df: pd.DataFrame) -> pd.DataFrame:
     }, index=df.index)
 
 
+BEHAVIORAL_GATE_DEFAULTS = dict(use_trend_align=True, spread_gate=1.5, avoid_volatile=True)
+
+
 def prepare_behavioral(df: pd.DataFrame, p: dict) -> pd.DataFrame:
     s = empty_signals(df)
     b = behavioral_measures(df)
+    g = {**BEHAVIORAL_GATE_DEFAULTS, **p}
     active = df["volume_ratio"] > p["volume_min"]
     panic = (b["ret_z"] < -p["shock_z"]) & active
     fomo = (b["ret_z"] > p["shock_z"]) & active
     stop_run_low = (df["sweep_low"] == 1) & (b["range_z"] > p["range_z"]) & (b["close_pos"] > 0.6)
     stop_run_high = (df["sweep_high"] == 1) & (b["range_z"] > p["range_z"]) & (b["close_pos"] < 0.4)
-    s["long_entry"] = panic | stop_run_low
-    s["short_entry"] = fomo | stop_run_high
+    long_setup, short_setup = panic | stop_run_low, fomo | stop_run_high
+    if g["use_trend_align"]:
+        # Take only the side the market structure already favours: buy panics and low sweeps in an uptrend,
+        # sell FOMO spikes and high sweeps in a downtrend. A fade against the trend was the source of the deep losses.
+        long_setup &= df["structure_trend"] == 1
+        short_setup &= df["structure_trend"] == -1
+    allowed = pd.Series(True, index=df.index)
+    if g["spread_gate"] and "spread" in df:
+        # A spread well above its recent median marks a panic or a thin book; the fill would be poor.
+        median = df["spread"].rolling(60, min_periods=60).median()
+        allowed &= ~(df["spread"] > g["spread_gate"] * median)
+    if g["avoid_volatile"] and "regime" in df:
+        allowed &= df["regime"] != VOLATILE
+    s["long_entry"] = long_setup & allowed
+    s["short_entry"] = short_setup & allowed
     s["stop_dist"] = p["stop_atr"] * df["atr_14"]
     s["target_dist"] = p["target_r"] * s["stop_dist"]
     s["max_hold"] = p["max_hold"]
@@ -363,10 +380,11 @@ DEFINITIONS = [
                  "not a hedged spread.", "Cointegration is tested separately and may not hold."],
                 needs=["xagusd", "eurusd", "dollaridxusd"]),
     StrategyDef("behavioral", "Behavioral Bias Recognition", "m15",
-                dict(shock_z=3.0, volume_min=1.2, range_z=1.5, stop_atr=1.5, target_r=1.5, max_hold=32),
+                dict(shock_z=3.0, volume_min=1.2, range_z=1.5, stop_atr=1.5, target_r=1.5, max_hold=32, **BEHAVIORAL_GATE_DEFAULTS),
                 dict(shock_z=[2.5, 3.0, 4.0], range_z=[1.0, 1.5, 2.5], target_r=[1.0, 2.0]),
                 prepare_behavioral, hypotheses_behavioral,
-                "Fades abnormal return shocks and liquidity sweeps with abnormal range. Labels describe measurable price behaviour only.",
+                "Buys abnormal down-shocks and low sweeps in a structural uptrend, sells up-shocks and high sweeps in a downtrend, skips wide-spread "
+                "and volatile-regime bars. Labels describe measurable price behaviour only.",
                 ["'Panic' and 'FOMO' are names for measurements, not evidence of what traders felt.",
                  "Provider volume is an activity proxy."]),
     StrategyDef("etf_turnaround", "ETF and Turnaround Effects", "h1",

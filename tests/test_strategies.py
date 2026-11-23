@@ -144,7 +144,7 @@ def test_stat_arb_quietly_does_nothing_without_cross_data():
 
 
 def test_behavioral_fades_panic_with_activity():
-    df = scene(np.full(150, 100.0), logret_1=np.r_[np.zeros(149), -0.05], volume_ratio=2.0)
+    df = scene(np.full(150, 100.0), logret_1=np.r_[np.zeros(149), -0.05], volume_ratio=2.0, structure_trend=1.0)
     s = engines.prepare_behavioral(df, get("behavioral").defaults)
     assert s.long_entry.iloc[-1]
     assert not engines.prepare_behavioral(df.assign(volume_ratio=0.5), get("behavioral").defaults).long_entry.iloc[-1]
