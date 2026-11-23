@@ -100,10 +100,13 @@ class SimulateBody(BaseModel):
 
 def create_app(services: Services | None = None) -> FastAPI:
     app = FastAPI(title="QuantResearch")
-    # Extra browser origins (for example the Cloudflare Pages site) are opt-in: QR_CORS_ORIGINS="https://a.pages.dev,https://b.example".
+    # Extra browser origins (the hosted dashboard, for example) are opt-in and must be exact: QR_CORS_ORIGINS="https://dashboard.example.com".
+    # Credentials are allowed so the browser can send the Cloudflare Access cookie, and that is only legal with an explicit list, never "*".
     extra_origins = [o.strip().rstrip("/") for o in os.environ.get("QR_CORS_ORIGINS", "").split(",") if o.strip()]
+    if any("*" in o for o in extra_origins):
+        raise ValueError("QR_CORS_ORIGINS must list exact origins; wildcards are not allowed because the API has no login of its own")
     app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:3000", "http://localhost:3000", *extra_origins],
-                       allow_methods=["*"], allow_headers=["*"])
+                       allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     svc = services or Services()
     app.state.services = svc
 

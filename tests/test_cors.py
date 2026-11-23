@@ -31,3 +31,17 @@ def test_extra_origins_are_opt_in_and_trailing_slashes_are_ignored(services, mon
     assert preflight(client, "https://other.example").headers.get("access-control-allow-origin") == "https://other.example"
     assert "access-control-allow-origin" not in preflight(client, "https://evil.example").headers
     assert preflight(client, "http://127.0.0.1:3000").headers.get("access-control-allow-origin") == "http://127.0.0.1:3000"
+
+
+def test_credentials_are_allowed_so_the_access_cookie_can_be_sent(services, monkeypatch):
+    monkeypatch.setenv("QR_CORS_ORIGINS", PAGES)
+    response = preflight(TestClient(create_app(services)), PAGES)
+    assert response.headers.get("access-control-allow-credentials") == "true"
+    assert response.headers.get("access-control-allow-origin") == PAGES  # Never "*" alongside credentials.
+
+
+@pytest.mark.parametrize("value", ["*", f"{PAGES},*", "https://*.pages.dev"])
+def test_wildcard_origins_are_refused(services, monkeypatch, value):
+    monkeypatch.setenv("QR_CORS_ORIGINS", value)
+    with pytest.raises(ValueError, match="wildcards"):
+        create_app(services)

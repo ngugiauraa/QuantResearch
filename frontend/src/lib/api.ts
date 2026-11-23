@@ -11,11 +11,22 @@ export const API: string = (
 export class ApiError extends Error {}
 
 export async function api<T = any>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
-  const response = await fetch(API + path, {
-    method: init?.method ?? "GET",
-    headers: init?.body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(API + path, {
+      method: init?.method ?? "GET",
+      headers: init?.body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+      // A hosted dashboard calls the API on another origin, and Cloudflare Access recognises you by its cookie.
+      credentials: API ? "include" : "same-origin",
+    });
+  } catch {
+    throw new ApiError(
+      API
+        ? "Could not reach the API. If your Cloudflare Access session has expired, open the API address once in this browser to sign in again, then reload."
+        : "Could not reach the API. Is the server running?",
+    );
+  }
   const text = await response.text();
   let data: any = null;
   try {

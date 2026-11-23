@@ -73,24 +73,52 @@ tunnel below, with its warnings). It starts on a simulated paper account. Nothin
 
 ### Cloud deployment (optional)
 
-The Python backend cannot move to Cloudflare: it needs the local Parquet warehouse and MetaTrader 5 on Windows. What can
-be hosted is the dashboard, with a Cloudflare Tunnel carrying its requests back to the API on your PC.
+The Python backend cannot move to Cloudflare: it needs the local Parquet warehouse and MetaTrader 5 on Windows. What can be
+hosted is the dashboard, with a Cloudflare Tunnel carrying its requests back to the API on your PC. **Cloudflare Access (a
+free login) must sit in front of both the dashboard and the tunnel.**
 
-> **Warning: the API has no authentication.** Treat the tunnel address as a secret and never post it publicly. Be aware
-> that `NEXT_PUBLIC_API_URL` is compiled into the dashboard's public JavaScript, so **anyone who can open the Pages
-> site can read the tunnel address.** Only deploy the Pages site if you are comfortable with that, or put
-> Cloudflare Access (a free login) in front. The safest setup is a single tunnel hostname with Access on it and no Pages
-> site; see `config/cloudflare-tunnel/README.md`. Live trading stays blocked behind [Section 23](#23-mt5-integration-and-trading-modes),
-> but the paper account and research data would be open to anyone with the address.
+```
+Internet user -> Cloudflare Access (login) -> Pages (dashboard)
+                                           -> Tunnel -> 127.0.0.1:8000 (API)
+```
 
-1. **Tunnel the API.** Follow `config/cloudflare-tunnel/README.md` (install `cloudflared`, `cloudflared tunnel login`,
-   `cloudflared tunnel create quantresearch`, edit `config/cloudflare-tunnel/config.yml`, `cloudflared tunnel run quantresearch`).
-   The API still binds to `127.0.0.1`; the tunnel is the only public entry point. Start it with the dashboard's address allowed:
-   `QR_CORS_ORIGINS=https://quantresearch-dashboard.pages.dev PYTHONPATH=src python -m quantresearch.api.server`.
-2. **Host the dashboard.** In the GitHub repository settings add the secrets `CLOUDFLARE_API_TOKEN` (permission: Cloudflare
-   Pages, Edit) and `CLOUDFLARE_ACCOUNT_ID`, and the variable `NEXT_PUBLIC_API_URL` (the tunnel address). A push to `main`
-   that touches `frontend/` then builds and deploys through `.github/workflows/deploy-frontend.yml`. To deploy by hand:
-   `cd frontend && NEXT_PUBLIC_API_URL=https://api.yourdomain.com npx next build && npx wrangler pages deploy out --project-name quantresearch-dashboard`.
+> **Security: the API has no authentication of its own. Cloudflare Access is the only thing protecting it.** Never disable
+> Access, never share the tunnel URL, and never set `QR_CORS_ORIGINS` to `*` (the server refuses to start if you do).
+> "Don't share the URL" is not a security model. `NEXT_PUBLIC_API_URL` is compiled into the dashboard's JavaScript, so a
+> dashboard without Access would hand the API address to anyone who opens it.
+
+**Step 1: create the tunnel** (`cloudflared` on Windows):
+
+```
+cloudflared tunnel login
+cloudflared tunnel create quantresearch
+```
+
+Then copy `config/cloudflare-tunnel/config.yml` to `%USERPROFILE%\.cloudflared\config.yml` and fill in the tunnel ID and hostname.
+
+**Step 2: create two Access applications** at one.dash.cloudflare.com (Zero Trust, free up to 50 users):
+
+- App 1: the dashboard's hostname. Use a custom domain such as `dashboard.yourdomain.com`, and also `*.quantresearch-dashboard.pages.dev`,
+  because every Pages deployment has its own address that a bare-domain application would not cover.
+- App 2: the API hostname, for example `api.quantresearch.yourdomain.com`.
+- Policy for both: Allow, Email, your address (or a list). Session duration 24 hours.
+
+**Step 3: lock CORS to the dashboard.** Start the API with exactly the dashboard's origin:
+`QR_CORS_ORIGINS=https://dashboard.yourdomain.com PYTHONPATH=src python -m quantresearch.api.server`.
+Local development origins stay allowed; there is no wildcard. The API also allows credentials so the browser can send the Access cookie.
+
+**Step 4: give the build the API address, without committing it.** `NEXT_PUBLIC_API_URL=https://api.quantresearch.yourdomain.com`.
+For the GitHub workflow (`.github/workflows/deploy-frontend.yml`, which runs on a push to `main` that touches `frontend/`) it is a repository
+**secret** named `NEXT_PUBLIC_API_URL`, next to `CLOUDFLARE_API_TOKEN` (permission: Cloudflare Pages, Edit) and `CLOUDFLARE_ACCOUNT_ID`.
+It is a GitHub secret rather than a Pages dashboard variable because the workflow builds the site itself, and Pages dashboard variables are
+only used when Cloudflare runs the build. For a local build use `frontend/.env.local` (git-ignored).
+
+**Step 5: run it** (`cloudflared tunnel run quantresearch`), open the API address once to sign in, then open the dashboard. The full
+walkthrough, including a checklist to confirm the lock actually holds, is in `config/cloudflare-tunnel/README.md`.
+
+What this guarantees: the tunnel address is not in the git repository; it is in the JavaScript bundle, which is only reachable after the
+Access login; and the tunnel is behind its own Access login, so reading the address is not enough. CORS stops other websites calling the API from
+a browser, but not `curl`: a caller needs the address **and** a valid Access session or token.
 
 The local workflow above is unchanged: with `NEXT_PUBLIC_API_URL` unset, the dashboard finds the API on its own.
 
@@ -706,8 +734,8 @@ Controls call real services, and there are no hardcoded statistics. Empty states
 | `QR_PORT` | 8000 | API port |
 | `QR_BROKER` | paper | Set to `mt5` to attach MT5 |
 | `QR_LIVE_ENABLED` | off | Must be `1` before live activation is possible |
-| `QR_CORS_ORIGINS` | none | Extra browser origins allowed to call the API, comma-separated (for example the Cloudflare Pages address) |
-| `NEXT_PUBLIC_API_URL` | none | Build-time, for the dashboard: the API address for a hosted copy. Compiled into public JavaScript |
+| `QR_CORS_ORIGINS` | none | Exact extra browser origins allowed to call the API, comma-separated (the hosted dashboard). Wildcards are refused |
+| `NEXT_PUBLIC_API_URL` | none | Build-time, for the dashboard: the API address for a hosted copy. Compiled into the JavaScript, so the dashboard must be behind Cloudflare Access. Never commit it |
 | `QR_MT5_LOGIN`, `QR_MT5_PASSWORD`, `QR_MT5_SERVER` | none | Session-only fallback. Prefer the credential store |
 | `SEC_USER_AGENT` | none | Your name and email, for SEC-based skills |
 
@@ -831,7 +859,7 @@ No external AI service is called by this platform.
 
 ## 32. Security
 
-- The API binds to `127.0.0.1` and has no authentication, so **do not expose it**. A test checks the bind address. The optional Cloudflare Tunnel in Section 1 is the one deliberate exception: it publishes the API, so protect it with Cloudflare Access and never share its address.
+- The API binds to `127.0.0.1` and has no authentication, so **do not expose it**. A test checks the bind address. The optional Cloudflare Tunnel in Section 1 is the one deliberate exception: it publishes the API, so Cloudflare Access must sit in front of both the tunnel and the dashboard, and the address must never be shared.
 - Credentials come from Windows Credential Manager through `keyring`, or from session variables. They are never in config files, the frontend or logs, and credential objects hide themselves when printed.
 - Anything logged passes through a redactor. A test scans tracked files for passwords, and another checks that API responses contain none.
 - The audit log has a hash chain, so an edit is detectable. The dashboard shows whether it is intact.
