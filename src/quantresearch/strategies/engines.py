@@ -1,4 +1,4 @@
-"""The seven strategy frameworks, as measurable rules.
+"""The eight strategy frameworks, as measurable rules.
 
 Parameters and hypotheses are research starting points. Nothing here assumes the edge exists:
 each engine's job is to give its idea a fair test and report what happens.
@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from quantresearch.core import timeframes as tfs
+from quantresearch.features.regime import RANGING, VOLATILE
 from quantresearch.strategies.base import (Hypothesis, StrategyDef, daily_trend, empty_signals, rolling_rank,
                                            trading_day_position)
 from quantresearch.warehouse import calendar as cal
@@ -42,6 +43,40 @@ def hypotheses_mean_reversion(df: pd.DataFrame, p: dict) -> list[Hypothesis]:
 
 
 # ---------------------------------------------------------------- 2. Trend and momentum
+# Hours (UTC) of the H1 bars that open inside the London (07:00-09:00) and New York (13:00-15:00) opens.
+LONDON_OPEN_HOURS = (7, 8)
+NEW_YORK_OPEN_HOURS = (13, 14)
+TREND_GATE_DEFAULTS = dict(use_session=True, use_vol_band=True, atr_pct_low=0.4, atr_pct_high=0.8, no_friday_late=True,
+                           fomc_blackout_h=4.0, use_regime=True, trail_atr=2.0, trail_bars=22)
+
+
+def trend_entry_gate(df: pd.DataFrame, p: dict) -> pd.Series:
+    """True where a NEW trend entry is allowed. Exits are never gated.
+
+    Every test uses the bar's own open time or trailing data, so the gate is causal.
+    - session: the bar opens in the London or New York open window (where gold trends tend to start)
+    - volatility band: atr_14 sits between two percentiles of its trailing 500-bar history
+    - Friday: no entries on bars opening at or after 18:00 UTC, ahead of the weekend gap
+    - FOMC: no entries from 0 to `fomc_blackout_h` hours before a scheduled decision
+    - regime: no entries while the regime label is ranging or volatile (skipped if there is no label)
+    """
+    g = {**TREND_GATE_DEFAULTS, **p}
+    ts = df["ts"]
+    ok = pd.Series(True, index=df.index)
+    if g["use_session"]:
+        ok &= ts.dt.hour.isin(LONDON_OPEN_HOURS + NEW_YORK_OPEN_HOURS)
+    if g["use_vol_band"]:
+        rank = rolling_rank(df["atr_14"], 500)
+        ok &= (rank >= g["atr_pct_low"]) & (rank <= g["atr_pct_high"])
+    if g["no_friday_late"]:
+        ok &= ~((ts.dt.day_of_week == 4) & (ts.dt.hour >= 18))
+    if g["fomc_blackout_h"] > 0 and "hours_to_fomc" in df:
+        ok &= ~df["hours_to_fomc"].between(0, g["fomc_blackout_h"])
+    if g["use_regime"] and "regime" in df:
+        ok &= ~df["regime"].isin([RANGING, VOLATILE])
+    return ok
+
+
 def prepare_trend(df: pd.DataFrame, p: dict) -> pd.DataFrame:
     s = empty_signals(df)
     n = p["channel"]
@@ -51,12 +86,20 @@ def prepare_trend(df: pd.DataFrame, p: dict) -> pd.DataFrame:
     align = daily_trend(df) if p["use_daily"] else pd.Series(0.0, index=df.index)
     long_ok = (align >= 0) if not p["use_daily"] else (align > 0)
     short_ok = (align <= 0) if not p["use_daily"] else (align < 0)
-    s["long_entry"] = (df["close"] > upper) & (df["ema_20"] > df["ema_50"]) & strong & long_ok
-    s["short_entry"] = (df["close"] < lower) & (df["ema_20"] < df["ema_50"]) & strong & short_ok
+    allowed = trend_entry_gate(df, p)
+    s["long_entry"] = (df["close"] > upper) & (df["ema_20"] > df["ema_50"]) & strong & long_ok & allowed
+    s["short_entry"] = (df["close"] < lower) & (df["ema_20"] < df["ema_50"]) & strong & short_ok & allowed
     s["stop_dist"] = p["stop_atr"] * df["atr_14"]
     s["max_hold"] = p["max_hold"]
-    s["exit_long"] = df["close"] < df["ema_50"]
-    s["exit_short"] = df["close"] > df["ema_50"]
+    # Chandelier trailing exit: close back through the trailing high (low) by trail_atr x ATR. It is a causal
+    # stand-in for a per-trade trailing stop, which a column generator cannot track, and it tightens as the
+    # trend extends instead of waiting for the slow EMA 50 cross.
+    g = {**TREND_GATE_DEFAULTS, **p}
+    window = int(g["trail_bars"])
+    peak = df["high"].rolling(window, min_periods=window).max()
+    trough = df["low"].rolling(window, min_periods=window).min()
+    s["exit_long"] = df["close"] < peak - g["trail_atr"] * df["atr_14"]
+    s["exit_short"] = df["close"] > trough + g["trail_atr"] * df["atr_14"]
     return s
 
 
@@ -126,16 +169,33 @@ def behavioral_measures(df: pd.DataFrame) -> pd.DataFrame:
     }, index=df.index)
 
 
+BEHAVIORAL_GATE_DEFAULTS = dict(use_trend_align=True, spread_gate=1.5, avoid_volatile=True)
+
+
 def prepare_behavioral(df: pd.DataFrame, p: dict) -> pd.DataFrame:
     s = empty_signals(df)
     b = behavioral_measures(df)
+    g = {**BEHAVIORAL_GATE_DEFAULTS, **p}
     active = df["volume_ratio"] > p["volume_min"]
     panic = (b["ret_z"] < -p["shock_z"]) & active
     fomo = (b["ret_z"] > p["shock_z"]) & active
     stop_run_low = (df["sweep_low"] == 1) & (b["range_z"] > p["range_z"]) & (b["close_pos"] > 0.6)
     stop_run_high = (df["sweep_high"] == 1) & (b["range_z"] > p["range_z"]) & (b["close_pos"] < 0.4)
-    s["long_entry"] = panic | stop_run_low
-    s["short_entry"] = fomo | stop_run_high
+    long_setup, short_setup = panic | stop_run_low, fomo | stop_run_high
+    if g["use_trend_align"]:
+        # Take only the side the market structure already favours: buy panics and low sweeps in an uptrend,
+        # sell FOMO spikes and high sweeps in a downtrend. A fade against the trend was the source of the deep losses.
+        long_setup &= df["structure_trend"] == 1
+        short_setup &= df["structure_trend"] == -1
+    allowed = pd.Series(True, index=df.index)
+    if g["spread_gate"] and "spread" in df:
+        # A spread well above its recent median marks a panic or a thin book; the fill would be poor.
+        median = df["spread"].rolling(60, min_periods=60).median()
+        allowed &= ~(df["spread"] > g["spread_gate"] * median)
+    if g["avoid_volatile"] and "regime" in df:
+        allowed &= df["regime"] != VOLATILE
+    s["long_entry"] = long_setup & allowed
+    s["short_entry"] = short_setup & allowed
     s["stop_dist"] = p["stop_atr"] * df["atr_14"]
     s["target_dist"] = p["target_r"] * s["stop_dist"]
     s["max_hold"] = p["max_hold"]
@@ -293,6 +353,67 @@ def hypotheses_overreaction(df: pd.DataFrame, p: dict) -> list[Hypothesis]:
     ]
 
 
+# ---------------------------------------------------------------- 8. London open momentum
+LONDON_WINDOW_START_MIN = 7 * 60  # The window covers bars opening from 07:00 UTC ...
+LONDON_WINDOW_END_MIN = 8 * 60 + 30  # ... up to the 08:25 bar, which closes at 08:30.
+LONDON_DEFAULTS = dict(threshold_atr=0.3, hold_bars=2, reverse_atr=0.5, stop_atr=1.0)
+
+
+def london_open_events(df: pd.DataFrame, p: dict) -> pd.DataFrame:
+    """The first bar, per day, whose move from the Asian-session close exceeds threshold_atr x atr_14.
+
+    The reference is the close of the last M5 bar before 07:00 UTC on the same date, carried forward within the
+    day. Only Monday to Thursday qualify. Everything uses the bar's own close and earlier bars, so it is causal.
+    """
+    g = {**LONDON_DEFAULTS, **p}
+    ts = df["ts"]
+    minute = ts.dt.hour * 60 + ts.dt.minute
+    day = ts.dt.floor("D")
+    asian_close = df["close"].where(minute < LONDON_WINDOW_START_MIN).groupby(day).ffill()
+    window = (minute >= LONDON_WINDOW_START_MIN) & (minute < LONDON_WINDOW_END_MIN) & (ts.dt.day_of_week <= 3)
+    move_atr = (df["close"] - asian_close) / df["atr_14"].where(df["atr_14"] > 0)
+    up = window & (move_atr > g["threshold_atr"])
+    down = window & (move_atr < -g["threshold_atr"])
+    crossed = up | down
+    first = crossed & (crossed.astype(int).groupby(day).cumsum() == 1)
+    return pd.DataFrame({"move_atr": move_atr.where(window), "first_up": first & up, "first_down": first & down}, index=df.index)
+
+
+def prepare_london_open(df: pd.DataFrame, p: dict) -> pd.DataFrame:
+    s = empty_signals(df)
+    g = {**LONDON_DEFAULTS, **p}
+    ev = london_open_events(df, p)
+    s["long_entry"], s["short_entry"] = ev["first_up"], ev["first_down"]
+    s["stop_dist"] = g["stop_atr"] * df["atr_14"]
+    s["max_hold"] = g["hold_bars"]
+    # Reversal exit: close back reverse_atr x ATR from the highest (lowest) close of the hold window. The entry bar
+    # is the extreme of that window in the usual case, so this is a causal stand-in for "reverses from entry".
+    window = int(g["hold_bars"]) + 1
+    peak = df["close"].rolling(window, min_periods=window).max()
+    trough = df["close"].rolling(window, min_periods=window).min()
+    s["exit_long"] = df["close"] < peak - g["reverse_atr"] * df["atr_14"]
+    s["exit_short"] = df["close"] > trough + g["reverse_atr"] * df["atr_14"]
+    return s
+
+
+def hypotheses_london_open(df: pd.DataFrame, p: dict) -> list[Hypothesis]:
+    ev = london_open_events(df, p)
+    up, down = ev["first_up"], ev["first_down"]
+    weekday = df["ts"].dt.day_of_week
+    mon_wed, thu = weekday <= 2, weekday == 3
+    return [
+        Hypothesis("LO1_up", "After the first upward 0.3 ATR move from the Asian close, price keeps rising for 2 bars", up, 1, 2),
+        Hypothesis("LO1_down", "After the first downward 0.3 ATR move from the Asian close, price keeps falling for 2 bars", down, -1, 2),
+        # Forward windows start at the event bar, so shifting the mask by 4 tests the 4 bars AFTER the 4th.
+        Hypothesis("LO2_up", "An upward opening move reverses after 4 bars", up.shift(4, fill_value=False), -1, 4),
+        Hypothesis("LO2_down", "A downward opening move reverses after 4 bars", down.shift(4, fill_value=False), 1, 4),
+        Hypothesis("LO3_mon_wed_up", "The upward continuation holds Monday to Wednesday", up & mon_wed, 1, 2),
+        Hypothesis("LO3_thu_up", "The upward continuation holds on Thursday", up & thu, 1, 2),
+        Hypothesis("LO3_mon_wed_down", "The downward continuation holds Monday to Wednesday", down & mon_wed, -1, 2),
+        Hypothesis("LO3_thu_down", "The downward continuation holds on Thursday", down & thu, -1, 2),
+    ]
+
+
 DEFINITIONS = [
     StrategyDef("mean_reversion", "Mean Reversion", "h1",
                 dict(z_entry=2.0, rsi_low=30.0, adx_max=25.0, stop_atr=1.5, max_hold=24),
@@ -301,11 +422,16 @@ DEFINITIONS = [
                 "Fades z-score and RSI extremes back to the 20-bar mean in low-ADX regimes, with an ATR stop and time exit.",
                 ["ADX is a lagging regime proxy.", "Trending years can erase many small wins."]),
     StrategyDef("trend", "Trend Following and Momentum", "h1",
-                dict(channel=55, adx_min=20.0, use_daily=True, stop_atr=2.0, max_hold=480),
+                dict(channel=55, adx_min=20.0, use_daily=True, stop_atr=2.0, max_hold=480, **TREND_GATE_DEFAULTS),
                 dict(channel=[20, 55, 100], adx_min=[15.0, 20.0, 30.0], use_daily=[True, False]),
                 prepare_trend, hypotheses_trend,
-                "Enters channel breakouts confirmed by average alignment, ADX and the last completed day's trend. Exits on a slow-average cross or stop.",
-                ["Breakout entries pay spread at the worst moments.", "Gold's long bull runs flatter long-side trend tests."]),
+                "Enters channel breakouts confirmed by average alignment, ADX and the last completed day's trend, only in the London and "
+                "New York open hours, with ATR in its 40th-80th trailing percentile, no late-Friday entries, a 4-hour FOMC pause and no "
+                "ranging or volatile regime. Exits on a 2 x ATR chandelier trail or the initial stop.",
+                ["Breakout entries pay spread at the worst moments.", "Gold's long bull runs flatter long-side trend tests.",
+                 "The session, percentile and blackout gates are priors from market structure, not fitted values, but every added "
+                 "filter cuts the trade count and raises the chance of a lucky backtest. Check the deflated Sharpe, not the raw one.",
+                 "The trailing exit is a chandelier on the last 22 bars, not a stop that ratchets from each trade's entry."]),
     StrategyDef("stat_arb", "Statistical Arbitrage", "h1",
                 dict(leg="xagusd", window=720, z_entry=2.0, z_exit=0.5, corr_min=0.5, stop_atr=3.0, max_hold=240),
                 dict(leg=["xagusd", "eurusd"], z_entry=[1.5, 2.0, 2.5], window=[480, 720]),
@@ -315,10 +441,11 @@ DEFINITIONS = [
                  "not a hedged spread.", "Cointegration is tested separately and may not hold."],
                 needs=["xagusd", "eurusd", "dollaridxusd"]),
     StrategyDef("behavioral", "Behavioral Bias Recognition", "m15",
-                dict(shock_z=3.0, volume_min=1.2, range_z=1.5, stop_atr=1.5, target_r=1.5, max_hold=32),
+                dict(shock_z=3.0, volume_min=1.2, range_z=1.5, stop_atr=1.5, target_r=1.5, max_hold=32, **BEHAVIORAL_GATE_DEFAULTS),
                 dict(shock_z=[2.5, 3.0, 4.0], range_z=[1.0, 1.5, 2.5], target_r=[1.0, 2.0]),
                 prepare_behavioral, hypotheses_behavioral,
-                "Fades abnormal return shocks and liquidity sweeps with abnormal range. Labels describe measurable price behaviour only.",
+                "Buys abnormal down-shocks and low sweeps in a structural uptrend, sells up-shocks and high sweeps in a downtrend, skips wide-spread "
+                "and volatile-regime bars. Labels describe measurable price behaviour only.",
                 ["'Panic' and 'FOMO' are names for measurements, not evidence of what traders felt.",
                  "Provider volume is an activity proxy."]),
     StrategyDef("etf_turnaround", "ETF and Turnaround Effects", "h1",
@@ -344,4 +471,14 @@ DEFINITIONS = [
                 prepare_overreaction, hypotheses_overreaction,
                 "Compares fading against following large gaps and return shocks, across session boundaries.",
                 ["A gap entry fills after the gap, at a possibly wide weekend-open spread."]),
+    StrategyDef("london_open_momentum", "London Open Momentum", "m5",
+                dict(**LONDON_DEFAULTS),
+                dict(threshold_atr=[0.2, 0.3, 0.5], hold_bars=[2, 3, 4]),
+                prepare_london_open, hypotheses_london_open,
+                "On Monday to Thursday, takes the first M5 bar between 07:00 and 08:30 UTC that has moved 0.3 ATR from the Asian-session "
+                "close, in the direction of the move. Holds 2 bars, exits early on a 0.5 ATR reversal, 1.0 ATR stop.",
+                ["The hypothesis is a prior about London liquidity, not a fitted result; it may simply not be there.",
+                 "A 2-bar hold on M5 is a few minutes, so spread and slippage are a large share of any edge. Test with real costs.",
+                 "The hypothesis tests compare each condition with zero, not Monday-Wednesday with Thursday; read LO3 side by side.",
+                 "The reversal exit is measured from the highest close of the hold window, not from the exact entry price."]),
 ]

@@ -278,8 +278,10 @@ def test_compare_uses_same_data_and_differs_by_component(frame):
 
 def test_skill_gates_change_decisions(frame):
     near_event = frame.assign(hours_to_fomc=1.0)
-    plain = orch.run_experiment(spec(strategies=["trend"]), near_event)
-    blocked = orch.run_experiment(spec(strategies=["trend"], skills=["fomc_block"]), near_event)
+    # The trend engine now has its own FOMC pause; switch it off so this test isolates the skill gate.
+    own = {"trend": {"fomc_blackout_h": 0.0}}
+    plain = orch.run_experiment(spec(strategies=["trend"], params=own), near_event)
+    blocked = orch.run_experiment(spec(strategies=["trend"], params=own, skills=["fomc_block"]), near_event)
     assert plain["decision_counts"]["long"] + plain["decision_counts"]["short"] > 0
     assert blocked["decision_counts"]["long"] + blocked["decision_counts"]["short"] == 0
     assert "FOMC" in blocked["decisions"][0]["reasons"][-1]

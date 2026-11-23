@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from quantresearch.api.services import Services, to_jsonable
 from quantresearch.core.config import ROOT
 from quantresearch.execution.broker import BrokerError
+from quantresearch.execution.mt5_check import health_snapshot
 from quantresearch.execution.router import Mode, OrderRequest
 from quantresearch.external import sources as src, store as ext
 from quantresearch.features import pit
@@ -99,7 +100,10 @@ class SimulateBody(BaseModel):
 
 def create_app(services: Services | None = None) -> FastAPI:
     app = FastAPI(title="QuantResearch")
-    app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
+    # Extra browser origins (for example the Cloudflare Pages site) are opt-in: QR_CORS_ORIGINS="https://a.pages.dev,https://b.example".
+    extra_origins = [o.strip().rstrip("/") for o in os.environ.get("QR_CORS_ORIGINS", "").split(",") if o.strip()]
+    app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:3000", "http://localhost:3000", *extra_origins],
+                       allow_methods=["*"], allow_headers=["*"])
     svc = services or Services()
     app.state.services = svc
 
@@ -127,7 +131,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         except BrokerError:
             pass
         return ok({"status": "ok", "started_at": svc.started_at, "warehouse_ready": has_bars("m1"), "broker": svc.broker.name, "broker_connected": broker_ok,
-                   "live_active": svc.router.live_active, "audit_chain_intact": svc.audit.verify(), "external": external})
+                   "mt5": health_snapshot(svc.broker), "live_active": svc.router.live_active, "audit_chain_intact": svc.audit.verify(), "external": external})
 
     @app.get("/api/overview")
     def overview():

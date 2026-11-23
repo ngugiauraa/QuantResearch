@@ -30,9 +30,9 @@ def frame():
     return market()
 
 
-def test_there_are_exactly_seven_engines():
-    assert len(REGISTRY) == 7
-    assert set(ALL) == {"mean_reversion", "trend", "stat_arb", "behavioral", "etf_turnaround", "seasonal", "overreaction"}
+def test_there_are_exactly_eight_engines():
+    assert len(REGISTRY) == 8
+    assert set(ALL) == {"mean_reversion", "trend", "stat_arb", "behavioral", "etf_turnaround", "seasonal", "overreaction", "london_open_momentum"}
 
 
 @pytest.mark.parametrize("name", ALL)
@@ -119,7 +119,8 @@ def test_trend_entry_needs_breakout_alignment_and_adx():
     close = np.linspace(100, 110, n)
     close[-1] = 130
     df = scene(close, ema_20=120.0, ema_50=110.0, adx=30.0)
-    params = get("trend").params(channel=20, use_daily=False)
+    # This scene is a synthetic 11:00 UTC bar, so the session and volatility gates are switched off here; test_trend_gates covers them.
+    params = get("trend").params(channel=20, use_daily=False, use_session=False, use_vol_band=False)
     assert engines.prepare_trend(df, params).long_entry.iloc[-1]
     df2 = df.assign(adx=5.0)
     assert not engines.prepare_trend(df2, params).long_entry.iloc[-1]
@@ -143,7 +144,7 @@ def test_stat_arb_quietly_does_nothing_without_cross_data():
 
 
 def test_behavioral_fades_panic_with_activity():
-    df = scene(np.full(150, 100.0), logret_1=np.r_[np.zeros(149), -0.05], volume_ratio=2.0)
+    df = scene(np.full(150, 100.0), logret_1=np.r_[np.zeros(149), -0.05], volume_ratio=2.0, structure_trend=1.0)
     s = engines.prepare_behavioral(df, get("behavioral").defaults)
     assert s.long_entry.iloc[-1]
     assert not engines.prepare_behavioral(df.assign(volume_ratio=0.5), get("behavioral").defaults).long_entry.iloc[-1]

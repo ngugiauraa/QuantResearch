@@ -43,7 +43,7 @@ export function Research() {
     <>
       <h1>Quantitative Research</h1>
       <ErrorBox error={runError ?? strategies.error} />
-      <Card title="Seven strategy engines">
+      <Card title="Eight strategy engines">
         {strategies.loading ? <Loading /> : (
           <Table columns={["Strategy", "Timeframe", "Result", "OOS trades", "OOS Sharpe", "Deflated Sharpe", ""]} rows={(strategies.data?.strategies ?? []).map((s: any) => [
             s.title, s.timeframe.toUpperCase(),
