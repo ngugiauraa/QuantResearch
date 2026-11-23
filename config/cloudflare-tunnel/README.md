@@ -80,8 +80,11 @@ cookies (Safari by default, Chrome in some modes) will refuse the API calls. It 
 - The tunnel address is not in the git repository, but it **is** in the dashboard's JavaScript. That is only safe because the dashboard is behind Access.
 - CORS is limited to the origins you list, which stops other websites from calling the API from a browser.
   It does **not** stop `curl` or server-side callers: someone with the address **and** a valid Access session or service token can still call it.
-- Access is a login in front of the API, not a check inside it. If you want defence in depth, the API could also verify the
-  `Cf-Access-Jwt-Assertion` header Access adds. It does not do that today.
+- Access is a login in front of the API. For defence in depth the API can also verify the `Cf-Access-Jwt-Assertion` token that Access
+  adds, so a request that skips Access is still refused with 403. It is off by default; turn it on by starting the API with
+  `QR_VERIFY_CF_ACCESS=true`, `QR_CF_ACCESS_AUD=<the AUD tag from the API application's Overview page>` and `QR_CF_ACCESS_TEAM=<your team name>`.
+  The server will not start if any is missing. While it is on, only requests that came through the tunnel (with a token) are accepted, so
+  `http://127.0.0.1:8000` in your own browser is refused: unset it for local use.
 - Live trading remains blocked behind the activation steps in README section 23, but the paper account and all research data
   are reachable by anyone who passes the Access login. Allow only people you trust with that.
 

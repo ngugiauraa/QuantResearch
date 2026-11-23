@@ -141,6 +141,12 @@ What this guarantees: the tunnel address is not in the git repository; it is in 
 Access login; and the tunnel is behind its own Access login, so reading the address is not enough. CORS stops other websites calling the API from
 a browser, but not `curl`: a caller needs the address **and** a valid Access session or token.
 
+**Step 6 (optional, recommended): make the API check the Access token itself.** Access normally stops unauthenticated requests at Cloudflare's
+edge; this adds a second lock in the API, so a misconfigured Access application or a hostname added to the tunnel later still cannot reach it.
+Start the API with `QR_VERIFY_CF_ACCESS=true`, `QR_CF_ACCESS_AUD=<the AUD tag of the API's Access application>` and `QR_CF_ACCESS_TEAM=<your team>`
+(Section 26). Only RS256 tokens issued by your team, for that audience and not expired, are accepted. With it on, use the dashboard through the
+tunnel only: `http://127.0.0.1:8000` carries no token and is refused. Leave it off for ordinary local use.
+
 The local workflow above is unchanged: with `NEXT_PUBLIC_API_URL` unset, the dashboard finds the API on its own.
 
 ---
@@ -756,6 +762,9 @@ Controls call real services, and there are no hardcoded statistics. Empty states
 | `QR_BROKER` | paper | Set to `mt5` to attach MT5 |
 | `QR_LIVE_ENABLED` | off | Must be `1` before live activation is possible |
 | `QR_CORS_ORIGINS` | none | Exact extra browser origins allowed to call the API, comma-separated (the hosted dashboard). Wildcards are refused |
+| `QR_VERIFY_CF_ACCESS` | off | `true` makes the API check the Cloudflare Access token (`Cf-Access-Jwt-Assertion`) on every HTTP and WebSocket request and answer 403 without a valid one. Needs the next two; the server refuses to start without them. Local access to `127.0.0.1` has no token, so it is refused while this is on |
+| `QR_CF_ACCESS_AUD` | none | The Application Audience (AUD) tag of the API's Access application (Zero Trust > Access > Applications > your app > Overview) |
+| `QR_CF_ACCESS_TEAM` | none | Your Access team name, as in `https://<team>.cloudflareaccess.com`. The signing keys are fetched from it at startup and refreshed every 24 hours |
 | `NEXT_PUBLIC_API_URL` | none | Build-time, for the dashboard: the API address for a hosted copy. Compiled into the JavaScript, so the dashboard must be behind Cloudflare Access. Never commit it |
 | `QR_MT5_LOGIN`, `QR_MT5_PASSWORD`, `QR_MT5_SERVER` | none | Session-only fallback. Prefer the credential store |
 | `SEC_USER_AGENT` | none | Your name and email, for SEC-based skills |

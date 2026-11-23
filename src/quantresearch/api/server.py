@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from quantresearch.api import cf_access
 from quantresearch.api.services import Services, to_jsonable
 from quantresearch.core.config import ROOT
 from quantresearch.execution.broker import BrokerError
@@ -100,6 +101,11 @@ class SimulateBody(BaseModel):
 
 def create_app(services: Services | None = None) -> FastAPI:
     app = FastAPI(title="QuantResearch")
+    # Optional second lock: verify the Cloudflare Access token on every request (see api/cf_access.py). Added BEFORE the CORS
+    # middleware so CORS is the outer layer: browser preflights, which carry no token, are answered by CORS and never reach this check.
+    access = cf_access.from_env()
+    if access is not None:
+        app.add_middleware(cf_access.CfAccessMiddleware, verifier=access)
     # Extra browser origins (the hosted dashboard, for example) are opt-in and must be exact: QR_CORS_ORIGINS="https://dashboard.example.com".
     # Credentials are allowed so the browser can send the Cloudflare Access cookie, and that is only legal with an explicit list, never "*".
     extra_origins = [o.strip().rstrip("/") for o in os.environ.get("QR_CORS_ORIGINS", "").split(",") if o.strip()]
