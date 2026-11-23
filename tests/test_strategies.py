@@ -30,9 +30,9 @@ def frame():
     return market()
 
 
-def test_there_are_exactly_seven_engines():
-    assert len(REGISTRY) == 7
-    assert set(ALL) == {"mean_reversion", "trend", "stat_arb", "behavioral", "etf_turnaround", "seasonal", "overreaction"}
+def test_there_are_exactly_eight_engines():
+    assert len(REGISTRY) == 8
+    assert set(ALL) == {"mean_reversion", "trend", "stat_arb", "behavioral", "etf_turnaround", "seasonal", "overreaction", "london_open_momentum"}
 
 
 @pytest.mark.parametrize("name", ALL)

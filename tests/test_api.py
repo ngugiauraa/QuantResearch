@@ -42,7 +42,7 @@ def test_health_reports_real_state(client):
 def test_overview_labels_price_as_not_live(client):
     o = client.get("/api/overview").json()
     assert o["mode"] == "paper" and o["quote"]["source"] == "stored_history_not_live"
-    assert o["account"]["equity"] > 0 and len(o["active_strategies"]) == 7 and o["regime"]["regime"] in ("quiet", "normal", "volatile")
+    assert o["account"]["equity"] > 0 and len(o["active_strategies"]) == 8 and o["regime"]["regime"] in ("quiet", "normal", "volatile")
 
 
 def test_bars_have_chart_fields_and_no_invalid_json(client):
@@ -71,7 +71,7 @@ def test_macro_and_calendar_and_missing_data_are_honest(client):
 
 def test_research_catalogue_and_missing_report(client):
     s = client.get("/api/research/strategies").json()["strategies"]
-    assert len(s) == 7 and all(x["limitations"] for x in s) and not s[0]["has_report"]
+    assert len(s) == 8 and all(x["limitations"] for x in s) and not s[0]["has_report"]
     assert client.get("/api/research/report/trend").status_code == 404
     assert client.get("/api/research/report/nope").status_code == 404
     assert client.post("/api/research/run/nope").status_code == 404

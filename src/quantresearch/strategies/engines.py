@@ -1,4 +1,4 @@
-"""The seven strategy frameworks, as measurable rules.
+"""The eight strategy frameworks, as measurable rules.
 
 Parameters and hypotheses are research starting points. Nothing here assumes the edge exists:
 each engine's job is to give its idea a fair test and report what happens.
@@ -353,6 +353,67 @@ def hypotheses_overreaction(df: pd.DataFrame, p: dict) -> list[Hypothesis]:
     ]
 
 
+# ---------------------------------------------------------------- 8. London open momentum
+LONDON_WINDOW_START_MIN = 7 * 60  # The window covers bars opening from 07:00 UTC ...
+LONDON_WINDOW_END_MIN = 8 * 60 + 30  # ... up to the 08:25 bar, which closes at 08:30.
+LONDON_DEFAULTS = dict(threshold_atr=0.3, hold_bars=2, reverse_atr=0.5, stop_atr=1.0)
+
+
+def london_open_events(df: pd.DataFrame, p: dict) -> pd.DataFrame:
+    """The first bar, per day, whose move from the Asian-session close exceeds threshold_atr x atr_14.
+
+    The reference is the close of the last M5 bar before 07:00 UTC on the same date, carried forward within the
+    day. Only Monday to Thursday qualify. Everything uses the bar's own close and earlier bars, so it is causal.
+    """
+    g = {**LONDON_DEFAULTS, **p}
+    ts = df["ts"]
+    minute = ts.dt.hour * 60 + ts.dt.minute
+    day = ts.dt.floor("D")
+    asian_close = df["close"].where(minute < LONDON_WINDOW_START_MIN).groupby(day).ffill()
+    window = (minute >= LONDON_WINDOW_START_MIN) & (minute < LONDON_WINDOW_END_MIN) & (ts.dt.day_of_week <= 3)
+    move_atr = (df["close"] - asian_close) / df["atr_14"].where(df["atr_14"] > 0)
+    up = window & (move_atr > g["threshold_atr"])
+    down = window & (move_atr < -g["threshold_atr"])
+    crossed = up | down
+    first = crossed & (crossed.astype(int).groupby(day).cumsum() == 1)
+    return pd.DataFrame({"move_atr": move_atr.where(window), "first_up": first & up, "first_down": first & down}, index=df.index)
+
+
+def prepare_london_open(df: pd.DataFrame, p: dict) -> pd.DataFrame:
+    s = empty_signals(df)
+    g = {**LONDON_DEFAULTS, **p}
+    ev = london_open_events(df, p)
+    s["long_entry"], s["short_entry"] = ev["first_up"], ev["first_down"]
+    s["stop_dist"] = g["stop_atr"] * df["atr_14"]
+    s["max_hold"] = g["hold_bars"]
+    # Reversal exit: close back reverse_atr x ATR from the highest (lowest) close of the hold window. The entry bar
+    # is the extreme of that window in the usual case, so this is a causal stand-in for "reverses from entry".
+    window = int(g["hold_bars"]) + 1
+    peak = df["close"].rolling(window, min_periods=window).max()
+    trough = df["close"].rolling(window, min_periods=window).min()
+    s["exit_long"] = df["close"] < peak - g["reverse_atr"] * df["atr_14"]
+    s["exit_short"] = df["close"] > trough + g["reverse_atr"] * df["atr_14"]
+    return s
+
+
+def hypotheses_london_open(df: pd.DataFrame, p: dict) -> list[Hypothesis]:
+    ev = london_open_events(df, p)
+    up, down = ev["first_up"], ev["first_down"]
+    weekday = df["ts"].dt.day_of_week
+    mon_wed, thu = weekday <= 2, weekday == 3
+    return [
+        Hypothesis("LO1_up", "After the first upward 0.3 ATR move from the Asian close, price keeps rising for 2 bars", up, 1, 2),
+        Hypothesis("LO1_down", "After the first downward 0.3 ATR move from the Asian close, price keeps falling for 2 bars", down, -1, 2),
+        # Forward windows start at the event bar, so shifting the mask by 4 tests the 4 bars AFTER the 4th.
+        Hypothesis("LO2_up", "An upward opening move reverses after 4 bars", up.shift(4, fill_value=False), -1, 4),
+        Hypothesis("LO2_down", "A downward opening move reverses after 4 bars", down.shift(4, fill_value=False), 1, 4),
+        Hypothesis("LO3_mon_wed_up", "The upward continuation holds Monday to Wednesday", up & mon_wed, 1, 2),
+        Hypothesis("LO3_thu_up", "The upward continuation holds on Thursday", up & thu, 1, 2),
+        Hypothesis("LO3_mon_wed_down", "The downward continuation holds Monday to Wednesday", down & mon_wed, -1, 2),
+        Hypothesis("LO3_thu_down", "The downward continuation holds on Thursday", down & thu, -1, 2),
+    ]
+
+
 DEFINITIONS = [
     StrategyDef("mean_reversion", "Mean Reversion", "h1",
                 dict(z_entry=2.0, rsi_low=30.0, adx_max=25.0, stop_atr=1.5, max_hold=24),
@@ -410,4 +471,14 @@ DEFINITIONS = [
                 prepare_overreaction, hypotheses_overreaction,
                 "Compares fading against following large gaps and return shocks, across session boundaries.",
                 ["A gap entry fills after the gap, at a possibly wide weekend-open spread."]),
+    StrategyDef("london_open_momentum", "London Open Momentum", "m5",
+                dict(**LONDON_DEFAULTS),
+                dict(threshold_atr=[0.2, 0.3, 0.5], hold_bars=[2, 3, 4]),
+                prepare_london_open, hypotheses_london_open,
+                "On Monday to Thursday, takes the first M5 bar between 07:00 and 08:30 UTC that has moved 0.3 ATR from the Asian-session "
+                "close, in the direction of the move. Holds 2 bars, exits early on a 0.5 ATR reversal, 1.0 ATR stop.",
+                ["The hypothesis is a prior about London liquidity, not a fitted result; it may simply not be there.",
+                 "A 2-bar hold on M5 is a few minutes, so spread and slippage are a large share of any edge. Test with real costs.",
+                 "The hypothesis tests compare each condition with zero, not Monday-Wednesday with Thursday; read LO3 side by side.",
+                 "The reversal exit is measured from the highest close of the hold window, not from the exact entry price."]),
 ]
