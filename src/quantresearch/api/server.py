@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from quantresearch.api.services import Services, to_jsonable
 from quantresearch.core.config import ROOT
 from quantresearch.execution.broker import BrokerError
+from quantresearch.execution.mt5_check import health_snapshot
 from quantresearch.execution.router import Mode, OrderRequest
 from quantresearch.external import sources as src, store as ext
 from quantresearch.features import pit
@@ -127,7 +128,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         except BrokerError:
             pass
         return ok({"status": "ok", "started_at": svc.started_at, "warehouse_ready": has_bars("m1"), "broker": svc.broker.name, "broker_connected": broker_ok,
-                   "live_active": svc.router.live_active, "audit_chain_intact": svc.audit.verify(), "external": external})
+                   "mt5": health_snapshot(svc.broker), "live_active": svc.router.live_active, "audit_chain_intact": svc.audit.verify(), "external": external})
 
     @app.get("/api/overview")
     def overview():
