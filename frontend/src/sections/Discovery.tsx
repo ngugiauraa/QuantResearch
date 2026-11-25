@@ -141,7 +141,7 @@ export function Discovery() {
       <div className="grid wide">
         <Card title="Search progress (cumulative experiments)">{rounds.length > 1 ? <ValueChart points={rounds} height={200} /> : <div className="muted">Waiting for rounds.</div>}</Card>
         <Card title="Resources: CPU % and free memory (GB)">
-          {cpu.length > 1 ? <><ValueChart points={cpu} height={95} /><ValueChart points={mem} color="#3fb68b" height={95} /></> : <div className="muted">Waiting for samples.</div>}
+          {cpu.length > 1 ? <><ValueChart points={cpu} height={95} /><ValueChart points={mem} color="#22c55e" height={95} /></> : <div className="muted">Waiting for samples.</div>}
         </Card>
       </div>
       <div className="grid wide">

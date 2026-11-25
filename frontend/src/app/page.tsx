@@ -11,33 +11,41 @@ import { Skills } from "@/sections/Skills";
 import { Terminal } from "@/sections/Terminal";
 import { Risk } from "@/sections/Risk";
 import { Performance } from "@/sections/Performance";
+import { GROUPS, Sidebar, TopBar, useShellData } from "@/components/Shell";
 
-const SECTIONS = [
-  ["overview", "Overview", Overview], ["charts", "Market Charts", Charts], ["intel", "Market Intelligence", Intelligence],
-  ["research", "Quantitative Research", Research], ["discovery", "Strategy Discovery", Discovery], ["ml", "Machine Learning", MachineLearning], ["timemachine", "Time Machine", TimeMachine],
-  ["skills", "Trading Skills", Skills], ["terminal", "Trading Terminal", Terminal], ["risk", "Risk Management", Risk], ["performance", "Performance and Audit", Performance],
-] as const;
+const SECTIONS: Record<string, () => React.JSX.Element> = {
+  overview: Overview, charts: Charts, intel: Intelligence, research: Research, discovery: Discovery, ml: MachineLearning,
+  timemachine: TimeMachine, skills: Skills, terminal: Terminal, risk: Risk, performance: Performance,
+};
+const LABELS: Record<string, string> = Object.fromEntries(GROUPS.flatMap((g) => g.items.map((i) => [i.key, i.label])));
 
 export default function Home() {
   const [active, setActive] = useState("overview");
+  const [collapsed, setCollapsed] = useState(false);
+  const { overview, health } = useShellData();
   useEffect(() => {
     const hash = window.location.hash.slice(1);
-    if (SECTIONS.some(([k]) => k === hash)) setActive(hash);
+    if (hash in SECTIONS) setActive(hash);
+    setCollapsed(localStorage.getItem("qr-sidebar") === "1");
   }, []);
   const open = (key: string) => {
     setActive(key);
     window.history.replaceState(null, "", `#${key}`);
   };
-  const Section = SECTIONS.find(([k]) => k === active)![2];
+  const toggle = () => {
+    setCollapsed((c) => {
+      localStorage.setItem("qr-sidebar", c ? "0" : "1");
+      return !c;
+    });
+  };
+  const Section = SECTIONS[active];
   return (
-    <div className="shell">
-      <nav aria-label="Sections">
-        <div className="brand">QuantResearch</div>
-        {SECTIONS.map(([key, label]) => (
-          <button key={key} className={active === key ? "active" : ""} onClick={() => open(key)}>{label}</button>
-        ))}
-      </nav>
-      <main><Section /></main>
+    <div className="flex min-h-screen flex-col md:flex-row">
+      <Sidebar active={active} onOpen={open} collapsed={collapsed} onToggle={toggle} health={health} />
+      <div className="min-w-0 flex-1">
+        <TopBar title={LABELS[active]} overview={overview} health={health} />
+        <main className="px-4 pb-24 pt-5 md:px-6 md:pb-12"><Section /></main>
+      </div>
     </div>
   );
 }
