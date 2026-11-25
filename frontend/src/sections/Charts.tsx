@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { fmt, useFetch } from "@/lib/api";
-import { Card, ErrorBox, Loading, Notice } from "@/components/ui";
+import { Card, EmptyState, ErrorBox, Notice, Skeleton } from "@/components/ui";
+import { adx, bbWidthPercentile, ema } from "@/lib/indicators";
 import { PriceChart, type Level, type Line, type Marker } from "@/components/PriceChart";
 
 const TFS = ["m1", "m5", "m15", "m30", "h1", "h4", "d1", "mn1"];
-const OVERLAYS: Record<string, string> = { sma_20: "#e0a84e", sma_50: "#5b9dd9", sma_200: "#b28ad6", ema_20: "#58c7c7", bb_upper: "#6b7a87", bb_lower: "#6b7a87" };
+const OVERLAYS: Record<string, string> = { sma_20: "#f59e0b", sma_50: "#7c3aed", sma_200: "#a78bfa", ema_20: "#58c7c7", bb_upper: "#6b7a87", bb_lower: "#6b7a87" };
 const LAYERS = { structure: "Structure breaks", sweeps: "Liquidity sweeps", fvg: "FVG and iFVG zones", session: "Session levels", swings: "Swing levels" };
 const STORE = "qr-drawings";
 
@@ -28,6 +29,7 @@ export function Charts() {
   const [pending, setPending] = useState<{ time: number; price: number } | null>(null);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const { data, error, loading } = useFetch(`/api/bars?tf=${tf}&limit=${limit}`);
+  const overview = useFetch("/api/overview", 30000);
 
   useEffect(() => setDrawings(loadDrawings()), []);
   const save = (next: Drawing[]) => {
@@ -42,6 +44,12 @@ export function Charts() {
   const bars: any[] = useMemo(() => data?.bars ?? [], [data]);
   const candles = useMemo(() => bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })), [bars]);
   const last = bars[bars.length - 1];
+  const panel = useMemo(() => {
+    if (!bars.length) return null;
+    const e50 = ema(bars.map((b) => b.close), 50);
+    const bb = bbWidthPercentile(bars);
+    return { adx: adx(bars), ema50: e50[e50.length - 1], bbWidth: bb?.width ?? null, bbPct: bb?.percentile ?? null };
+  }, [bars]);
 
   const lines = useMemo(() => {
     const out: Line[] = overlays.map((key) => ({ name: key, color: OVERLAYS[key], points: bars.map((b) => ({ time: b.time, value: b[key] })) }));
@@ -56,18 +64,18 @@ export function Charts() {
     const out: Marker[] = [];
     for (const b of bars) {
       if (layers.includes("structure")) {
-        if (b.bos_up === 1) out.push({ time: b.time, position: "belowBar", color: "#3fb68b", shape: "arrowUp", text: "BOS" });
-        if (b.bos_down === 1) out.push({ time: b.time, position: "aboveBar", color: "#e0605e", shape: "arrowDown", text: "BOS" });
+        if (b.bos_up === 1) out.push({ time: b.time, position: "belowBar", color: "#22c55e", shape: "arrowUp", text: "BOS" });
+        if (b.bos_down === 1) out.push({ time: b.time, position: "aboveBar", color: "#ef4444", shape: "arrowDown", text: "BOS" });
         if (b.choch_up === 1) out.push({ time: b.time, position: "belowBar", color: "#58c7c7", shape: "arrowUp", text: "CHoCH" });
-        if (b.choch_down === 1) out.push({ time: b.time, position: "aboveBar", color: "#e0a84e", shape: "arrowDown", text: "CHoCH" });
+        if (b.choch_down === 1) out.push({ time: b.time, position: "aboveBar", color: "#f59e0b", shape: "arrowDown", text: "CHoCH" });
       }
       if (layers.includes("sweeps")) {
-        if (b.sweep_high === 1) out.push({ time: b.time, position: "aboveBar", color: "#b28ad6", shape: "circle", text: "sweep" });
-        if (b.sweep_low === 1) out.push({ time: b.time, position: "belowBar", color: "#b28ad6", shape: "circle", text: "sweep" });
+        if (b.sweep_high === 1) out.push({ time: b.time, position: "aboveBar", color: "#a78bfa", shape: "circle", text: "sweep" });
+        if (b.sweep_low === 1) out.push({ time: b.time, position: "belowBar", color: "#a78bfa", shape: "circle", text: "sweep" });
       }
       if (layers.includes("fvg")) {
         if (b.ifvg_up === 1) out.push({ time: b.time, position: "belowBar", color: "#58c7c7", shape: "square", text: "iFVG" });
-        if (b.ifvg_down === 1) out.push({ time: b.time, position: "aboveBar", color: "#e0a84e", shape: "square", text: "iFVG" });
+        if (b.ifvg_down === 1) out.push({ time: b.time, position: "aboveBar", color: "#f59e0b", shape: "square", text: "iFVG" });
       }
     }
     return out;
@@ -78,20 +86,20 @@ export function Charts() {
     if (!last) return out;
     const add = (price: number | null, color: string, title: string) => price !== null && price !== undefined && out.push({ price, color, title });
     if (layers.includes("session")) {
-      add(last.pdh, "#e0a84e", "PDH");
-      add(last.pdl, "#e0a84e", "PDL");
+      add(last.pdh, "#f59e0b", "PDH");
+      add(last.pdl, "#f59e0b", "PDL");
       add(last.day_high, "#7f8d99", "day high");
       add(last.day_low, "#7f8d99", "day low");
     }
     if (layers.includes("swings")) {
-      add(last.swing_high, "#b28ad6", "swing high");
-      add(last.swing_low, "#b28ad6", "swing low");
+      add(last.swing_high, "#a78bfa", "swing high");
+      add(last.swing_low, "#a78bfa", "swing low");
     }
     if (layers.includes("fvg")) {
-      add(last.fvg_up_low, "#3fb68b", "FVG up low");
-      add(last.fvg_up_high, "#3fb68b", "FVG up high");
-      add(last.fvg_down_low, "#e0605e", "FVG down low");
-      add(last.fvg_down_high, "#e0605e", "FVG down high");
+      add(last.fvg_up_low, "#22c55e", "FVG up low");
+      add(last.fvg_up_high, "#22c55e", "FVG up high");
+      add(last.fvg_down_low, "#ef4444", "FVG down low");
+      add(last.fvg_down_high, "#ef4444", "FVG down high");
     }
     return out;
   }, [last, layers, drawings]);
@@ -116,7 +124,7 @@ export function Charts() {
       <h1>Market Charts</h1>
       <ErrorBox error={error} />
       <div className="row">
-        {TFS.map((t) => <button key={t} className={`btn ${t === tf ? "primary" : ""}`} onClick={() => setTf(t)}>{t.toUpperCase()}</button>)}
+        <div className="flex gap-1 rounded-full border border-line bg-surface2 p-1" role="group" aria-label="Timeframe">{TFS.map((t) => <button key={t} className={`rounded-full px-3 py-0.5 text-xs font-semibold transition-colors duration-150 ${t === tf ? "bg-brand text-white shadow-glow" : "text-mute hover:text-ink"}`} onClick={() => setTf(t)}>{t.toUpperCase()}</button>)}</div><span className="rounded-full border border-line bg-surface px-3 py-0.5 text-xs font-semibold">XAUUSD</span>
         <label>Bars <select value={limit} onChange={(e) => setLimit(+e.target.value)}>{[200, 500, 1000, 2000, 5000].map((n) => <option key={n}>{n}</option>)}</select></label>
         {last && <span className="muted">Close {fmt(last.close)}, spread {fmt(last.spread)}, RSI {fmt(last.rsi_14, 1)}, ATR {fmt(last.atr_14)}. Mid prices.</span>}
       </div>
@@ -132,7 +140,22 @@ export function Charts() {
         <button className="btn" onClick={() => save([])} disabled={!drawings.length}>Clear drawings ({drawings.length})</button>
         {tool !== "none" && <span className="warn">{tool === "level" ? "Click the chart to place the level." : pending ? "Click the second point." : "Click the first point."}</span>}
       </div>
-      {loading && !bars.length ? <Loading what="Loading bars" /> : <Card><PriceChart candles={candles} lines={lines} levels={levels} markers={markers} onPick={onPick} /></Card>}
+      <div className="grid-chart">
+        <div className="min-w-0">
+          {loading && !bars.length ? <Skeleton className="h-[560px]" /> : !bars.length ? <EmptyState className="h-[560px]" text="No bars for this timeframe. Build the warehouse first." /> : <Card><PriceChart candles={candles} lines={lines} levels={levels} markers={markers} onPick={onPick} height={560} /></Card>}
+        </div>
+        <Card title="Current bar">
+          {!last ? <Skeleton className="h-48" /> : (
+            <dl className="space-y-2.5 text-sm">
+              {([["Close", fmt(last.close)], ["ADX (14)", panel?.adx == null ? "–" : fmt(panel.adx, 1)], ["EMA 20", fmt(last.ema_20)], ["EMA 50", panel?.ema50 == null ? "–" : fmt(panel.ema50)], ["ATR (14)", fmt(last.atr_14)], ["BB width", panel?.bbWidth == null ? "–" : `${fmt(panel.bbWidth * 100)}%`], ["BB width pct", panel?.bbPct == null ? "–" : String(Math.round(panel.bbPct))], ["RSI (14)", fmt(last.rsi_14, 1)], ["Spread", fmt(last.spread)]] as const).map(([k, v]) => (
+                <div key={k} className="flex items-baseline justify-between border-b border-line pb-2"><dt className="label">{k}</dt><dd className="mono font-semibold">{v}</dd></div>
+              ))}
+              <div className="flex items-baseline justify-between"><dt className="label">Regime</dt><dd className="font-semibold uppercase text-brand-soft">{overview.data?.regime?.regime ?? "–"}</dd></div>
+              <div className="text-[11px] text-mute">ADX, EMA 50 and BB width are computed in the browser from the bars loaded here. Regime is the latest H1 fit.</div>
+            </dl>
+          )}
+        </Card>
+      </div>
       <Notice>History only: no live feed is connected to this chart. Structure and FVG rules are this project&apos;s own definitions; see the README for each.</Notice>
     </>
   );

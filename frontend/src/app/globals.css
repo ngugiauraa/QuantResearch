@@ -72,3 +72,6 @@ main h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: r
 @media (min-width: 768px) { .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (min-width: 1024px) { .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .grid-3 .card, .grid-4 .card { margin-bottom: 0; }
+.grid-chart { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1024px) { .grid-chart { grid-template-columns: minmax(0, 7fr) minmax(0, 3fr); } }
+.grid-chart > .card { margin-bottom: 0; }
