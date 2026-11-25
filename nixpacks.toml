@@ -3,6 +3,7 @@ nixPkgs = ["python312"]
 
 [phases.install]
 cmds = [
+  "python3.12 -m ensurepip --upgrade",
   "python3.12 -m pip install --break-system-packages -e '.[dev]'"
 ]
 
