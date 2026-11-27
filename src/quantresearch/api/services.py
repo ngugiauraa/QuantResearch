@@ -107,9 +107,15 @@ class Services:
         return limits
 
     def _event_schedule(self) -> list[datetime]:
-        """Published FOMC decision times. A missing calendar is reported by the risk engine as a block."""
+        """Published FOMC decision times. A missing calendar is reported by the risk engine as a block.
+
+        No calendar on disk is not the same as no events, so it raises: the risk engine turns that into a failed
+        news check (fail closed). Exits are unaffected.
+        """
         events = ext.read_events(self.p)
         rows = events[events["series"] == "FOMC_DECISION"]
+        if rows.empty:
+            raise RuntimeError("the FOMC calendar has not been downloaded; run python -m quantresearch.external.store")
         return [t.to_pydatetime() for t in rows["event_ts"]]
 
     # ------------------------------------------------------------ shared results

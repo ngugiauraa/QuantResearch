@@ -83,3 +83,16 @@ def test_clearing_then_tripping_again_is_logged_again():
 def test_paper_broker_reports_its_account_and_unknown_brokers_report_none(tmp_path):
     assert account_key(PaperBroker(tmp_path / "p.sqlite")) == "paper"
     assert account_key(object()) is None
+
+
+def test_a_missing_event_calendar_blocks_entries_but_not_exits(tmp_path):
+    from quantresearch.api.services import Services
+    from quantresearch.core.config import Paths
+    from quantresearch.risk.engine import Account, Market, Proposal
+
+    svc = Services(Paths(tmp_path))
+    market = Market(2000.0, 2000.3, 5.0, NOW)
+    entry = svc.risk.evaluate(Proposal(1, 0.1, 2000.3, 1990.0, 2020.0), Account(100_000.0), market)
+    assert not entry.approved and any("FOMC calendar has not been downloaded" in r for r in entry.reasons)
+    exit_ = svc.risk.evaluate(Proposal(-1, 0.1, 2000.0, reduces_position=True), Account(100_000.0, open_lots=0.1, open_positions=1), market)
+    assert exit_.approved
