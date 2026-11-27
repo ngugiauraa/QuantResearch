@@ -103,6 +103,14 @@ class Mt5Broker:
         return AccountInfo(info.balance, info.equity, info.margin_free, info.currency,
                            info.trade_mode == self.mt5.ACCOUNT_TRADE_MODE_REAL, bool(info.trade_allowed))
 
+    def account_key(self) -> str:
+        """Which account the equity belongs to ("mt5:<login>@<server>"), for the risk engine's baselines."""
+        self.ensure_connected()
+        info = self.mt5.account_info()
+        if info is None:
+            raise BrokerError(f"account_info failed: {self.mt5.last_error()}")
+        return f"mt5:{info.login}@{info.server}"
+
     def quote(self) -> Quote:
         self.ensure_connected()
         tick = self.mt5.symbol_info_tick(self.symbol_name)

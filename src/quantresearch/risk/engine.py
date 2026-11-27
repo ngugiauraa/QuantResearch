@@ -124,11 +124,14 @@ class RiskState:
 
 class RiskEngine:
     def __init__(self, limits: RiskLimits | None = None, state: RiskState | None = None,
-                 news_schedule: Callable[[], list[datetime]] | None = None):
+                 news_schedule: Callable[[], list[datetime]] | None = None,
+                 on_event: Callable[[str, dict], None] | None = None):
         self.limits = limits or RiskLimits()
         self.limits.validate()
         self.state = state or RiskState()
         self.news_schedule = news_schedule
+        # Baseline resets and breaker trips are reported here (the API passes its audit log).
+        self.on_event = on_event or (lambda event, data: None)
 
     # ------------------------------------------------------------ controls
     @property
@@ -150,29 +153,62 @@ class RiskEngine:
     def clear_lockout(self) -> None:
         self.state.set("lockout_until", None)
         self.state.set("lockout_reason", None)
+        self.state.set("lockout_kind", None)
 
     # ------------------------------------------------------------ tracking
-    def observe(self, equity: float, now: datetime) -> dict:
-        """Feed account equity. Tracks the day's start and the peak, and applies breaker lockouts."""
+    def observe(self, equity: float, now: datetime, account: str | None = None) -> dict:
+        """Feed account equity. Tracks the day's start and the peak, and applies breaker lockouts.
+
+        `account` names the account the equity belongs to (for example "paper" or "mt5:<login>@<server>").
+        Peak and day-start are baselines of one account: when the account changes, they start again from
+        this reading and the reset is reported, so one account's peak is never compared with another's
+        equity. Lockouts already set are kept; a person clears them. Without `account` (backtests,
+        replays), behaviour is as before.
+        """
         day = now.date().isoformat()
+        if account is not None and self.state.get("account") != account:
+            previous = {"account": self.state.get("account"), "peak_equity": self.state.get("peak_equity"),
+                        "peak_at": self.state.get("peak_at"), "day_start_equity": self.state.get("day_start_equity")}
+            self.state.set("account", account)
+            self.state.set("peak_equity", equity)
+            self.state.set("peak_at", now.isoformat())
+            self.state.set("day", day)
+            self.state.set("day_start_equity", equity)
+            self.on_event("risk_baseline_reset", {"reason": "account changed" if previous["account"] else "first reading tied to an account",
+                                                  "account": account, "equity": equity, "previous": previous,
+                                                  "lockout_kept": self.state.get("lockout_reason")})
         if self.state.get("day") != day:
             self.state.set("day", day)
             self.state.set("day_start_equity", equity)
             self.state.set("trades_today", 0)
-        peak = max(float(self.state.get("peak_equity", equity)), equity)
+        peak = float(self.state.get("peak_equity", equity))
+        if equity > peak or self.state.get("peak_equity") is None:
+            peak = equity
+            self.state.set("peak_at", now.isoformat())
         self.state.set("peak_equity", peak)
         start = float(self.state.get("day_start_equity", equity))
         daily = (start - equity) / start * 100 if start > 0 else 0.0
         drawdown = (peak - equity) / peak * 100 if peak > 0 else 0.0
+        reading = {"equity": equity, "peak_equity": peak, "peak_at": self.state.get("peak_at"), "day_start_equity": start,
+                   "account": self.state.get("account"), "at": now.isoformat()}
         if daily >= self.limits.max_daily_loss_pct:
-            self.set_lockout(now + timedelta(hours=self.limits.lockout_hours_after_daily_loss),
-                             f"Daily loss {daily:.2f}% reached the {self.limits.max_daily_loss_pct}% limit")
+            self._trip("daily_loss", now + timedelta(hours=self.limits.lockout_hours_after_daily_loss),
+                       f"Daily loss {daily:.2f}% reached the {self.limits.max_daily_loss_pct}% limit", now, reading)
         if drawdown >= self.limits.max_drawdown_pct:
             # Drawdown needs a person to review it, so this lockout has no end time.
-            self.set_lockout(datetime(9999, 1, 1, tzinfo=timezone.utc),
-                             f"Drawdown {drawdown:.2f}% reached the {self.limits.max_drawdown_pct}% limit")
+            self._trip("drawdown", datetime(9999, 1, 1, tzinfo=timezone.utc),
+                       f"Drawdown {drawdown:.2f}% reached the {self.limits.max_drawdown_pct}% limit", now, reading)
         return {"daily_loss_pct": daily, "drawdown_pct": drawdown, "peak_equity": peak, "day_start_equity": start,
                 "trades_today": int(self.state.get("trades_today", 0))}
+
+    def _trip(self, kind: str, until: datetime, reason: str, now: datetime, reading: dict) -> None:
+        """Apply a breaker lockout, and report it with the numbers behind it when it is new."""
+        current = self.lockout_until()
+        fresh = current is None or now >= current or self.state.get("lockout_kind") != kind
+        self.set_lockout(until, reason)
+        self.state.set("lockout_kind", kind)
+        if fresh:
+            self.on_event("risk_lockout_set", {"kind": kind, "reason": reason, "until": until.isoformat(), **reading})
 
     def record_entry(self) -> None:
         self.state.set("trades_today", int(self.state.get("trades_today", 0)) + 1)

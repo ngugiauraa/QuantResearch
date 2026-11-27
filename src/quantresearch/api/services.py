@@ -39,8 +39,9 @@ class Services:
         self.p.app.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self.limits_path = self.p.app / "risk_limits.json"
-        self.risk = RiskEngine(self._load_limits(), RiskState(self.p.app / "risk.sqlite"), news_schedule=self._event_schedule)
         self.audit = AuditLog(self.p.app / "audit.sqlite")
+        self.risk = RiskEngine(self._load_limits(), RiskState(self.p.app / "risk.sqlite"), news_schedule=self._event_schedule,
+                               on_event=lambda event, data: self.audit.write(event, data))
         self.broker = self._make_broker()
         # Warehouse history plus, with MT5 attached, the broker's bars after the warehouse ends.
         self.live = LiveBars(self.broker, self.p)

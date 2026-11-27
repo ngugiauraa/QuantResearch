@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 
-from quantresearch.execution.broker import Broker, BrokerError, OrderResult
+from quantresearch.execution.broker import Broker, BrokerError, OrderResult, account_key
 from quantresearch.execution.secrets import redact
 from quantresearch.risk.engine import Account, Market, Proposal, RiskEngine
 
@@ -170,7 +170,7 @@ class OrderRouter:
         positions = self.broker.positions()
         quote = self.broker.quote()
         now = datetime.now(timezone.utc)
-        self.risk.observe(account.equity, now)
+        self.risk.observe(account.equity, now, account_key(self.broker))
         return self.risk.evaluate(
             Proposal(request.side, request.lots, request.entry, request.stop, request.target, request.source),
             Account(account.equity, account.balance, sum(p.lots for p in positions), len(positions)),

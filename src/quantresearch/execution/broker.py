@@ -96,6 +96,17 @@ class Broker(Protocol):
     def cancel_order(self, ticket: int) -> OrderResult: ...
 
 
+def account_key(broker) -> str | None:
+    """The broker's account identity for the risk engine, or None when it cannot be read (legacy behaviour)."""
+    method = getattr(broker, "account_key", None)
+    if method is None:
+        return None
+    try:
+        return method()
+    except BrokerError:
+        return None
+
+
 class PaperBroker:
     """Simulated account with persistence. Market orders buy at the ask and sell at the bid."""
     name = "paper"
@@ -133,6 +144,10 @@ class PaperBroker:
                            ("orders", [asdict(x) for x in self._orders])):
             self.con.execute("INSERT OR REPLACE INTO paper VALUES(?,?)", (key, json.dumps(value)))
         self.con.commit()
+
+    def account_key(self) -> str:
+        """Which account the equity belongs to, for the risk engine's baselines."""
+        return "paper"
 
     def connect(self) -> bool:
         self._connected = True

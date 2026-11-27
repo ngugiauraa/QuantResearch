@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from quantresearch.api import cf_access
 from quantresearch.api.services import Services, to_jsonable
 from quantresearch.core.config import ROOT
-from quantresearch.execution.broker import BrokerError
+from quantresearch.execution.broker import BrokerError, account_key
 from quantresearch.execution.mt5_check import health_snapshot
 from quantresearch.execution.router import Mode, OrderRequest
 from quantresearch.external import sources as src, store as ext
@@ -161,7 +161,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             account = asdict(svc.broker.account())
         except BrokerError as exc:
             error = str(exc)
-        risk_view = svc.risk.observe(account["equity"], now.to_pydatetime()) if account else {}
+        risk_view = svc.risk.observe(account["equity"], now.to_pydatetime(), account_key(svc.broker)) if account else {}
         return ok({"account": account, "account_error": error, "quote": quote, "market_open_by_schedule": cal.market_open(now.to_pydatetime()), "session": cal.session_of(pd.Series([now])).iloc[0] if cal.market_open(now.to_pydatetime()) else "closed",
                    "regime": latest_regime, "mode": svc.router.mode.value, "broker": svc.broker.name, "risk": {**risk_view, "emergency_stop": svc.risk.emergency_stop, "lockout_until": svc.risk.lockout_until()},
                    "active_strategies": list(REGISTRY), "recent_signals": sorted(recent_signals, key=lambda s: str(s["time"]), reverse=True)[:10]})
@@ -601,7 +601,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             svc.refresh_paper_quote()
             account = svc.broker.account()
             positions = svc.broker.positions()
-            snapshot = svc.risk.observe(account.equity, pd.Timestamp.now(tz="UTC").to_pydatetime())
+            snapshot = svc.risk.observe(account.equity, pd.Timestamp.now(tz="UTC").to_pydatetime(), account_key(svc.broker))
             exposure = {"open_lots": sum(p.lots for p in positions), "positions": len(positions), "net_lots": sum(p.side * p.lots for p in positions), "equity": account.equity}
         except BrokerError as exc:
             error = str(exc)
