@@ -7,12 +7,14 @@ What is honest about these timestamps:
     (an ALFRED API key), so no macro-surprise feature is claimed.
   - COT report dates are Tuesdays, and CFTC publishes the following Friday at 15:30 New York.
   - FOMC decision times use the customary 14:00 New York statement time.
-  - Cross-market bars come from the same provider as gold and are available at bar close.
+  - Cross-market bars come from the same provider as gold and are available at bar close. When that provider
+    refuses, the broker's (MT5) bars fill in, flagged FLAG_BROKER; see merge_cross.
 """
 from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -193,9 +195,91 @@ def fetch_cross(symbol: str, timeframe: str = "h1", start: str = "2003-05-01", e
             raise RuntimeError(f"{symbol}: {(done.stdout + done.stderr)[-300:]}")
         frame = pd.read_csv(Path(folder) / "out.csv")
     frame["ts"] = pd.to_datetime(frame.pop("timestamp"), utc=True)
-    target = p.external / "cross" / f"{symbol}_{timeframe}.parquet"
+    _write(cross_path(p, symbol, timeframe, "provider"), frame[["ts", "open", "high", "low", "close", "volume"]])
+    return merge_cross(symbol, timeframe, p)
+
+
+# ------------------------------------------------------------ MT5 fallback for cross-market series
+# Exness names, without the account-type suffix ("m" on this account, taken from QR_MT5_SYMBOL). Exness offers
+# no Treasury bond CFD, so ustbondtrusd has no fallback.
+MT5_CROSS = {"xagusd": "XAGUSD", "eurusd": "EURUSD", "gbpusd": "GBPUSD", "usdjpy": "USDJPY",
+             "dollaridxusd": "DXY", "usa500idxusd": "US500", "lightcmdusd": "USOIL"}
+FLAG_BROKER = 16  # Same flag as broker-filled gold bars (warehouse.build.FLAG_BROKER).
+
+
+def mt5_suffix(gold_symbol: str | None = None) -> str:
+    """The account's symbol suffix: XAUUSDm -> "m", XAUUSD -> ""."""
+    import os
+
+    gold = gold_symbol or os.environ.get("QR_MT5_SYMBOL", "XAUUSD")
+    return gold[len("XAUUSD"):] if gold.upper().startswith("XAUUSD") else ""
+
+
+def cross_path(p: Paths, symbol: str, timeframe: str = "h1", layer: str | None = None) -> Path:
+    """layer None is the merged series every reader uses; "provider" and "mt5" are the raw copies it is built from."""
+    folder = p.external / "cross" if layer is None else p.external / "cross" / layer
+    return folder / f"{symbol}_{timeframe}.parquet"
+
+
+def _write(target: Path, frame: pd.DataFrame) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    frame[["ts", "open", "high", "low", "close", "volume"]].to_parquet(target, index=False)
+    temp = target.with_suffix(".tmp")
+    frame.to_parquet(temp, index=False)
+    os.replace(temp, target)
+
+
+def _read(target: Path) -> pd.DataFrame | None:
+    if not target.exists():
+        return None
+    frame = pd.read_parquet(target)
+    frame["ts"] = pd.to_datetime(frame["ts"], utc=True)
+    return frame
+
+
+def fetch_cross_mt5(symbol: str, broker, timeframe: str = "h1", p: Paths | None = None, now: pd.Timestamp | None = None) -> Path:
+    """Copy every bar the broker has for this series. Earlier archived bars are kept, so history only grows."""
+    p = p or paths()
+    if symbol not in MT5_CROSS:
+        raise RuntimeError(f"{symbol}: the broker offers no equivalent")
+    name = MT5_CROSS[symbol] + mt5_suffix(getattr(broker, "symbol_name", None))
+    rows = broker.rates(name, timeframe)
+    fresh = pd.DataFrame(rows)
+    fresh = pd.DataFrame({"ts": pd.to_datetime(fresh["ts"], utc=True), "open": fresh["open"], "high": fresh["high"], "low": fresh["low"],
+                          "close": fresh["close"], "volume": fresh["tick_volume"], "mt5_symbol": name})
+    # The newest bar is usually still forming. Store closed bars only, so research never sees a partial close.
+    length = {"m1": pd.Timedelta(minutes=1), "h1": pd.Timedelta(hours=1), "d1": pd.Timedelta(days=1)}[timeframe]
+    fresh = fresh[fresh["ts"] + length <= (now or pd.Timestamp.now(tz="UTC"))]
+    target = cross_path(p, symbol, timeframe, "mt5")
+    old = _read(target)
+    if old is not None:
+        fresh = pd.concat([old[old["ts"] < fresh["ts"].min()], fresh], ignore_index=True)
+    _write(target, fresh.drop_duplicates("ts", keep="last").sort_values("ts", ignore_index=True))
+    return merge_cross(symbol, timeframe, p)
+
+
+def merge_cross(symbol: str, timeframe: str = "h1", p: Paths | None = None) -> Path:
+    """The series readers use: the provider's bars, plus broker bars only for UTC days the provider does not cover
+    or after its last bar. Broker rows carry FLAG_BROKER, so a later provider download replaces them."""
+    p = p or paths()
+    target = cross_path(p, symbol, timeframe)
+    legacy = _read(target)
+    if legacy is not None and "flags" not in legacy and not cross_path(p, symbol, timeframe, "provider").exists():
+        _write(cross_path(p, symbol, timeframe, "provider"), legacy)  # A Dukascopy file from before the split.
+    provider, broker = _read(cross_path(p, symbol, timeframe, "provider")), _read(cross_path(p, symbol, timeframe, "mt5"))
+    if provider is None and broker is None:
+        raise FileNotFoundError(target)
+    parts = []
+    if provider is not None:
+        parts.append(provider.assign(flags=0, source="dukascopy"))
+    if broker is not None:
+        keep = broker
+        if provider is not None and len(provider):
+            covered = set(provider["ts"].dt.date)
+            keep = broker[(~broker["ts"].dt.date.isin(covered)) | (broker["ts"] > provider["ts"].max())]
+        parts.append(keep.assign(flags=FLAG_BROKER, source="mt5:" + keep["mt5_symbol"].astype(str)).drop(columns=["mt5_symbol"]))
+    merged = pd.concat(parts, ignore_index=True).sort_values("ts", ignore_index=True)
+    merged["flags"] = merged["flags"].astype("int64")
+    _write(target, merged[["ts", "open", "high", "low", "close", "volume", "flags", "source"]])
     return target
 
 

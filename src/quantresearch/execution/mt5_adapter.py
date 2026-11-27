@@ -149,6 +149,31 @@ class Mt5Broker:
                             "tick_volume": float(r["tick_volume"]), "spread": float(r["spread"]) * point})
         return out
 
+    def rates(self, symbol: str, timeframe: str = "h1", count: int = 99_999) -> list[dict]:
+        """Every bar the terminal has for any symbol, newest last, read-only. Times are UTC bar open times.
+
+        Used for cross-market series. MT5 serves at most the terminal's "max bars in chart" setting and rejects a
+        count equal to it, so the request stays one below. Prices are the symbol's bid; `spread` is in price units.
+        """
+        import os
+
+        self.ensure_connected()
+        if not self.mt5.symbol_select(symbol, True):
+            raise BrokerError(f"The broker does not offer {symbol}: {self.mt5.last_error()}")
+        frames = {"m1": self.mt5.TIMEFRAME_M1, "h1": self.mt5.TIMEFRAME_H1, "d1": self.mt5.TIMEFRAME_D1}
+        info = self.mt5.terminal_info()
+        if info is not None and getattr(info, "maxbars", 0):
+            count = min(count, int(info.maxbars) - 1)
+        rows = self.mt5.copy_rates_from_pos(symbol, frames[timeframe], 0, count)
+        if rows is None or len(rows) == 0:
+            raise BrokerError(f"No {timeframe} bars for {symbol}: {self.mt5.last_error()}")
+        spec = self.mt5.symbol_info(symbol)
+        point = float(spec.point) if spec is not None else 0.0
+        offset = timedelta(hours=float(os.environ.get("QR_MT5_UTC_OFFSET_HOURS", "0")))
+        return [{"ts": datetime.fromtimestamp(int(r["time"]), timezone.utc) - offset, "open": float(r["open"]), "high": float(r["high"]),
+                 "low": float(r["low"]), "close": float(r["close"]), "tick_volume": float(r["tick_volume"]), "spread": float(r["spread"]) * point}
+                for r in rows]
+
     def spread(self) -> float:
         q = self.quote()
         return q.ask - q.bid

@@ -6,8 +6,9 @@
 
 Read-only on the broker side: it copies bars and nothing else. MT5 rows are archived per UTC day under
 warehouse/broker/mt5/m1 and enter the M1 bars only where the provider has nothing (see build.broker_fill), flagged
-FLAG_BROKER. When a later provider download covers those days, the next build replaces them. The outcome of each
-run is written to reports/mt5_sync.json, which /api/health shows.
+FLAG_BROKER. When a later provider download covers those days, the next build replaces them. It then tops up the
+cross-market series (silver, FX, dollar index, S&P 500, WTI) from MT5. The outcome of each run is written to
+reports/mt5_sync.json, which /api/health shows.
 """
 from __future__ import annotations
 
@@ -57,7 +58,8 @@ def try_provider(month: pd.Period, p: Paths) -> dict:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
-def sync(broker, p: Paths | None = None, since: pd.Timestamp | None = None, provider: bool = True, now: pd.Timestamp | None = None) -> dict:
+def sync(broker, p: Paths | None = None, since: pd.Timestamp | None = None, provider: bool = True, now: pd.Timestamp | None = None,
+         cross: bool = True) -> dict:
     p = p or paths()
     now = (now or pd.Timestamp.now(tz="UTC")).floor("min")
     report: dict = {"started_at": datetime.now(timezone.utc).isoformat()}
@@ -71,6 +73,15 @@ def sync(broker, p: Paths | None = None, since: pd.Timestamp | None = None, prov
     report["months"] = {str(m): build.build_month(m.year, m.month, p) for m in months}
     report["higher"] = build.build_higher_since(months[0], p)
     report["warehouse_end_after"] = str(warehouse_end(p))
+    if cross and hasattr(broker, "rates"):
+        # Cross-market series from MT5 only: a full Dukascopy retry downloads two decades per symbol, so it stays
+        # in `python -m quantresearch.external.store`. A later successful Dukascopy download still takes priority.
+        from quantresearch.external import store as ext
+
+        try:
+            report["cross"] = ext.save_status(ext.refresh_cross(p, broker, provider=False), p)["status"]
+        except Exception as exc:
+            report["cross"] = {"error": f"{type(exc).__name__}: {exc}"}
     report["finished_at"] = datetime.now(timezone.utc).isoformat()
     p.reports.mkdir(parents=True, exist_ok=True)
     (p.reports / "mt5_sync.json").write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
