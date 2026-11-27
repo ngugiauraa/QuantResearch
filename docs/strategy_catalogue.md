@@ -1,8 +1,8 @@
 # Strategy catalogue
 
-61 gold (XAUUSD) strategies that are commonly claimed to be automatable, plus some of this project's own ideas. Each is implemented in `src/quantresearch/strategies/catalogue/` and runs through exactly the same research as the 8 engines: walk-forward out-of-sample folds, the untouched two-year holdout, observed and stressed costs, and the same report.
+102 gold (XAUUSD) strategies that are commonly claimed to be automatable, plus some of this project's own ideas. Each is implemented in `src/quantresearch/strategies/catalogue/` and runs through exactly the same research as the 8 engines: walk-forward out-of-sample folds, the untouched two-year holdout, observed and stressed costs, and the same report.
 
-**Hard rules.** Parameters are fixed as written here and are never tuned (each strategy has one variant; the first run locks it). Every run is recorded in the experiment ledger and the trial book, and nothing is deleted. The deflated Sharpe that decides 'promising' counts every variant ever tested by the engines and the catalogue. A strategy is only promising if it has at least 30 out-of-sample trades, is positive out of sample, positive in the holdout, positive in the holdout under stressed costs, and has a project-wide deflated Sharpe above 0.95.
+**Hard rules.** Parameters are fixed as written here and are never tuned (each strategy has one variant; the first run locks it). Every run is recorded in the experiment ledger and the trial book, and nothing is deleted. The deflated Sharpe that decides 'promising' counts every variant ever tested by the engines and the catalogue (N), with the luck spread taken from the catalogue's out-of-sample Sharpes; all strategies are re-scored against the final count. A strategy is only promising if it has at least 30 out-of-sample trades, is positive out of sample, positive in the holdout, positive in the holdout under stressed costs, and has a project-wide deflated Sharpe above 0.95.
 
 **Conventions.** Signals act at a bar's close and fill on a later event, so 'breaks above X' means 'closes above X'. ATR is Wilder ATR(14) on the strategy's timeframe. Every strategy has a stop because positions are sized from it (0.5% risk). Times are local market time with daylight saving. 'Needs data we don't have' strategies are implemented but cannot trade until that data exists.
 
@@ -14,6 +14,7 @@ Regenerate with `python -m quantresearch.strategies.catalogue.docs`. Run with `p
 - `cat_nfp_follow_m15`: the official BLS release calendar (the BLS site refused automated access); the first-Friday rule is an approximation that misses some months
 - `cat_cpi_fade_m15`: US CPI release times (the BLS schedule refused automated access); no trades until a hours_since_cpi column is supplied
 - `cat_options_expiry_d1`: the exchange's options expiry calendar; expiry is approximated as five business days before month end, which ignores holidays
+- `cat_cpi_surprise_d1`: CPI consensus forecasts and first-release values (no free source; FRED has revised values only)
 
 ## Batch 1
 
@@ -695,3 +696,459 @@ Regenerate with `python -m quantresearch.strategies.catalogue.docs`. Run with `p
 - **Stop:** 1.5 x the project's Wilder ATR(14) on the signal timeframe.
 - **Data:** XAUUSD bars (mid prices)
 - **Parameters (fixed):** `{"move_atr": 1.5, "stop_atr": 1.5, "hold": 4}`
+
+## Batch 4
+
+### `cat_real_yield_momentum_d1`: Real-yield moves (10-year TIPS)
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Erb and Harvey, 'The Golden Dilemma' (NBER w18706, 2013), https://www.nber.org/papers/w18706
+- **Logic:** Gold pays no yield, so falling real yields make it more attractive and rising ones less.
+- **Entry:** Long when DFII10 - DFII10 20 days earlier crosses below -0.15; short when it crosses above +0.15.
+- **Exit:** Exit after 10 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; FRED DFII10 (10-year TIPS yield). Macro: DFII10
+- **Parameters (fixed):** `{"stop_atr": 3.0, "hold": 10}`
+
+### `cat_real_yield_trend_d1`: Falling real-yield regime with gold uptrend
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Erb and Harvey (2013); regime form is own idea
+- **Logic:** Hold gold only when both the macro tailwind and the price trend agree.
+- **Entry:** Long when DFII10 < its 120-day SMA and the close > SMA(50), on the first day both hold. Long only.
+- **Exit:** Exit when either condition fails.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; FRED DFII10. Macro: DFII10
+- **Parameters (fixed):** `{"ry_sma": 120, "stop_atr": 3.0}`
+
+### `cat_dollar_momentum_d1`: Broad-dollar moves
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Gold-dollar inverse relationship, e.g. Capie, Mills and Wood, 'Gold as a Hedge against the Dollar', J. Int. Financial Markets 15(4), 2005
+- **Logic:** Gold is priced in dollars, so a weaker dollar tends to lift it.
+- **Entry:** Long when the 20-day % change in DTWEXBGS crosses below -1%; short when it crosses above +1%.
+- **Exit:** Exit after 10 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; FRED DTWEXBGS (weekly, assumed 8-day lag). Macro: DTWEXBGS
+- **Parameters (fixed):** `{"stop_atr": 3.0, "hold": 10}`
+
+### `cat_dollar_yield_combo_d1`: Dollar and real yield falling together
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Own idea combining the two main gold macro drivers
+- **Logic:** When both main headwinds ease at once, gold should do well; when both tighten, badly.
+- **Entry:** Long on the first day both DTWEXBGS and DFII10 are below their values 5 days earlier; short on the first day both are above.
+- **Exit:** Exit after 5 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; FRED DTWEXBGS; FRED DFII10. Macro: DTWEXBGS, DFII10
+- **Parameters (fixed):** `{"days": 5, "stop_atr": 3.0, "hold": 5}`
+
+### `cat_breakeven_trend_d1`: Breakeven inflation moves
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Gold as an inflation hedge, e.g. Bampinas and Panagiotidis, 'Are Gold and Silver a Hedge against Inflation?', Int. Review of Financial Analysis 41, 2015
+- **Logic:** Rising inflation expectations are said to lift gold.
+- **Entry:** Long when T10YIE - its value 20 days earlier crosses above +0.10; short when it crosses below -0.10.
+- **Exit:** Exit after 10 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; FRED T10YIE. Macro: T10YIE
+- **Parameters (fixed):** `{"stop_atr": 3.0, "hold": 10}`
+
+### `cat_fed_cut_cycle_d1`: Fed cutting cycle
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Commonly claimed 'gold rallies in easing cycles'; own exact rule
+- **Logic:** Rate cuts lower the cost of holding gold.
+- **Entry:** Long on the first day DFF - DFF 60 days earlier < -0.25. Long only.
+- **Exit:** Exit when that change is back at or above zero.
+- **Stop:** 4 x the project's Wilder ATR(14) on the signal timeframe, catastrophic.
+- **Data:** XAUUSD daily bars; FRED DFF. Macro: DFF
+- **Parameters (fixed):** `{"days": 60, "threshold": 0.25, "stop_atr": 4.0}`
+
+### `cat_curve_steepener_d1`: Yield-curve steepening
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Own idea (steepening as an easing/inflation signal)
+- **Logic:** A steepening curve often signals expected easing or rising inflation, both said to help gold.
+- **Entry:** Long when (DGS10 - DGS2) minus its value 20 days earlier crosses above +0.15. Long only.
+- **Exit:** Exit after 20 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; FRED DGS10; FRED DGS2. Macro: DGS10, DGS2
+- **Parameters (fixed):** `{"days": 20, "threshold": 0.15, "stop_atr": 3.0, "hold": 20}`
+
+### `cat_vix_regime_d1`: High-VIX regime
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Baur and Lucey, 'Is Gold a Hedge or a Safe Haven?', Financial Review 45(2), 2010
+- **Logic:** In market stress gold is said to act as a safe haven.
+- **Entry:** Long when the VIX close crosses above 30. Long only.
+- **Exit:** Exit when the VIX is below 25.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; FRED VIXCLS. Macro: VIXCLS
+- **Parameters (fixed):** `{"enter": 30.0, "exit": 25.0, "stop_atr": 3.0}`
+
+### `cat_gvz_panic_d1`: Gold-volatility spike reversal
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Own idea (panic reversal using CBOE's gold volatility index)
+- **Logic:** A spike in gold's implied volatility during a fall often marks capitulation.
+- **Entry:** Long when the 250-day z-score of GVZ crosses above 2 and the close is below SMA(50). Long only.
+- **Exit:** Exit after 10 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; FRED GVZCLS (CBOE Gold ETF Volatility Index). Macro: GVZCLS
+- **Parameters (fixed):** `{"window": 250, "z": 2.0, "stop_atr": 3.0, "hold": 10}`
+
+### `cat_oil_inflation_d1`: Oil surge as an inflation signal
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Commonly claimed oil-gold inflation link; own exact rule
+- **Logic:** A sharp oil rise feeds inflation fears, which are said to lift gold.
+- **Entry:** Long when WTI (FRED DCOILWTICO) / its value 20 days earlier - 1 crosses above 10%. Long only.
+- **Exit:** Exit after 20 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; FRED DCOILWTICO (assumed 8-day lag). Macro: DCOILWTICO
+- **Parameters (fixed):** `{"days": 20, "threshold": 0.1, "stop_atr": 3.0, "hold": 20}`
+
+### `cat_cpi_surprise_d1`: CPI surprise
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Event-study literature on gold and macro news, e.g. Elder, Miao and Ramchander, 'Impact of Macroeconomic News on Metal Futures', J. Banking & Finance 36(1), 2012
+- **Logic:** Higher-than-expected inflation is said to lift gold.
+- **Entry:** On the release day: long if actual CPI m/m minus consensus > +0.1 points, short if < -0.1.
+- **Exit:** Exit after 5 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; CPI first releases and consensus forecasts. Macro: CPI_SURPRISE
+- **Parameters (fixed):** `{"threshold": 0.1, "stop_atr": 3.0, "hold": 5}`
+- **Needs data we don't have:** CPI consensus forecasts and first-release values (no free source; FRED has revised values only)
+
+### `cat_cot_contrarian_d1`: COT managed-money extremes (contrarian)
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Common sentiment rule; see e.g. Sanders, Boris and Manfredo, 'Hedgers, Funds, and Small Speculators in the Energy Futures Markets', Energy Economics 26(3), 2004
+- **Logic:** When funds are extremely long, few buyers remain, so the price is vulnerable.
+- **Entry:** Long when the 104-week z-score of CFTC managed-money net (published Friday 15:30 New York) crosses below -2; short when it crosses above +2.
+- **Exit:** Exit after 10 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; CFTC disaggregated COT, gold
+- **Parameters (fixed):** `{"z": 2.0, "stop_atr": 3.0, "hold": 10}`
+
+### `cat_cot_momentum_d1`: COT managed-money trend
+
+- **Family:** Macro. **Timeframe:** D1.
+- **Source:** Own idea (flow persistence in positioning)
+- **Logic:** Funds adding to positions week after week may keep buying.
+- **Entry:** On a new COT publication: long if managed-money net rose in each of the last 3 reports; short if it fell in each.
+- **Exit:** Exit after 5 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; CFTC disaggregated COT, gold. Macro: COT_MM_NET
+- **Parameters (fixed):** `{"reports": 3, "stop_atr": 3.0, "hold": 5}`
+
+### `cat_gold_silver_ratio_d1`: Gold/silver ratio extremes
+
+- **Family:** Cross-market. **Timeframe:** D1.
+- **Source:** Commonly traded gold/silver ratio reversion; e.g. Baur and Tran, 'The Long-run Relationship of Gold and Silver', Applied Economics Letters 21(13), 2014
+- **Logic:** When gold is unusually expensive relative to silver, the ratio tends to fall back, which can mean gold falls.
+- **Entry:** z = 250-day z-score of ln(gold / silver). Short gold when z crosses above 2; long gold when it crosses below -2.
+- **Exit:** Exit when |z| < 0.5.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; silver (XAGUSD) H1 closes. Cross-market: xagusd
+- **Parameters (fixed):** `{"window": 250, "z": 2.0, "z_exit": 0.5, "stop_atr": 3.0}`
+
+### `cat_silver_lead_h1`: Silver jump, gold lag
+
+- **Family:** Cross-market. **Timeframe:** H1.
+- **Source:** Own idea (lead-lag between related metals)
+- **Logic:** Silver sometimes moves first; gold may follow within a few hours.
+- **Entry:** If silver's 1-bar log return exceeds 2 x its 100-bar SD while gold's is under 0.5 x its own SD: enter gold in silver's direction.
+- **Exit:** Exit after 3 bars.
+- **Stop:** 1.5 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD H1 bars; silver (XAGUSD) H1 closes. Cross-market: xagusd
+- **Parameters (fixed):** `{"window": 100, "k": 2.0, "gold_k": 0.5, "stop_atr": 1.5, "hold": 3}`
+
+### `cat_dollar_catchup_h1`: Gold catching up with a dollar move
+
+- **Family:** Cross-market. **Timeframe:** H1.
+- **Source:** Own idea (gold-dollar lag)
+- **Logic:** If the dollar has weakened and gold has not reacted yet, gold may catch up.
+- **Entry:** Over 24 H1 bars: long when the dollar index is down more than 0.5% and gold is up less than 0.2%; short mirrored. First bar of each condition.
+- **Exit:** Exit after 12 bars.
+- **Stop:** 2 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD H1 bars; dollar index H1 closes. Cross-market: dollaridxusd
+- **Parameters (fixed):** `{"n": 24, "dollar_move": 0.005, "gold_max": 0.002, "stop_atr": 2.0, "hold": 12}`
+
+### `cat_dollar_breakout_h4`: Dollar-index channel break
+
+- **Family:** Cross-market. **Timeframe:** H4.
+- **Source:** Own idea (trend in the dollar transmitted to gold)
+- **Logic:** A new dollar trend is a headwind or tailwind for gold.
+- **Entry:** Long gold when the dollar index close crosses below its prior 55-bar low; short when it crosses above its prior 55-bar high.
+- **Exit:** Exit after 30 bars.
+- **Stop:** 2 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD H4 bars; dollar index H1 closes. Cross-market: dollaridxusd
+- **Parameters (fixed):** `{"n": 55, "stop_atr": 2.0, "hold": 30}`
+
+### `cat_eurusd_confirm_h1`: Gold breakout confirmed by EURUSD
+
+- **Family:** Cross-market. **Timeframe:** H1.
+- **Source:** Own idea (dollar confirmation of gold moves)
+- **Logic:** A gold breakout backed by a weaker dollar is more likely to be real.
+- **Entry:** Long when gold closes above its prior 20-bar high and EURUSD above its prior 20-bar high; short when both break their lows.
+- **Exit:** Exit after 24 bars.
+- **Stop:** 2 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD H1 bars; EURUSD H1 closes. Cross-market: eurusd
+- **Parameters (fixed):** `{"n": 20, "stop_atr": 2.0, "hold": 24}`
+
+### `cat_usdjpy_riskoff_h1`: Yen-strength risk-off
+
+- **Family:** Cross-market. **Timeframe:** H1.
+- **Source:** Own idea (yen and gold as twin havens)
+- **Logic:** A sharp yen rally signals risk aversion, which may also lift gold.
+- **Entry:** Long gold when USDJPY's 24-bar return crosses below -1%. Long only.
+- **Exit:** Exit after 24 bars.
+- **Stop:** 2 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD H1 bars; USDJPY H1 closes. Cross-market: usdjpy
+- **Parameters (fixed):** `{"stop_atr": 2.0, "hold": 24}`
+
+### `cat_spx_selloff_d1`: Equity sell-off flight to gold
+
+- **Family:** Cross-market. **Timeframe:** D1.
+- **Source:** Baur and Lucey (2010), gold as a safe haven against equities
+- **Logic:** When stocks fall hard, money may move into gold.
+- **Entry:** Long gold when the S&P 500's 5-day return crosses below -3%. Long only.
+- **Exit:** Exit after 5 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD daily bars; S&P 500 CFD H1 closes. Cross-market: usa500idxusd
+- **Parameters (fixed):** `{"stop_atr": 3.0, "hold": 5}`
+
+## Batch 5
+
+### `cat_bos_follow_h1`: Break of structure continuation
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication
+- **Logic:** A close beyond the last swing in the trend's direction confirms the trend; join it.
+- **Entry:** Long on a bullish BOS (close above the last confirmed swing high, trend not down); short on a bearish BOS.
+- **Exit:** Target 2 x the stop distance; otherwise exit after 48 bars; an opposite signal reverses.
+- **Stop:** Beyond the opposite confirmed swing (swing low for longs), at least 0.5 and at most 4 x ATR(14).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"target_r": 2.0, "hold": 48}`
+
+### `cat_choch_reversal_h1`: Change of character reversal
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication
+- **Logic:** The first close beyond a swing against the trend marks a possible reversal.
+- **Entry:** Long on a bullish CHoCH (close above the last swing high while the trend is down); short on a bearish CHoCH.
+- **Exit:** Target 2R; otherwise exit after 48 bars.
+- **Stop:** Beyond the opposite confirmed swing (swing low for longs), at least 0.5 and at most 4 x ATR(14).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"target_r": 2.0, "hold": 48}`
+
+### `cat_mss_displacement_h1`: Market-structure shift with displacement
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication
+- **Logic:** A structure shift made with a big, fast candle shows real intent behind the reversal.
+- **Entry:** As the CHoCH rule, but only when the breaking bar's high-low range exceeds 1.5 x ATR(14).
+- **Exit:** Target 2R; otherwise exit after 48 bars.
+- **Stop:** Beyond the opposite confirmed swing (swing low for longs), at least 0.5 and at most 4 x ATR(14).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"displacement": 1.5, "target_r": 2.0, "hold": 48}`
+
+### `cat_htf_bias_bos_h1`: BOS with the daily bias
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication (higher-timeframe bias)
+- **Logic:** Trade lower-timeframe structure only with the higher-timeframe trend.
+- **Entry:** Long on a bullish H1 BOS when the last completed New York day closed above its 20-day average; short mirrored.
+- **Exit:** Target 2R; otherwise exit after 48 bars.
+- **Stop:** Beyond the opposite confirmed swing (swing low for longs), at least 0.5 and at most 4 x ATR(14).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"htf_trend": 20, "target_r": 2.0, "hold": 48}`
+
+### `cat_ny_kz_bos_m15`: BOS in the New York killzone
+
+- **Family:** SMC / ICT structure. **Timeframe:** M15.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication (killzones)
+- **Logic:** Structure breaks in the most active US hours, with the daily trend, carry follow-through.
+- **Entry:** Long on a bullish M15 BOS with a bar opening 07:00-10:00 New York and an up daily trend (20-day); short mirrored.
+- **Exit:** Target 2R; flat from 12:00 New York; at most 20 bars.
+- **Stop:** Beyond the opposite confirmed swing (swing low for longs), at least 0.5 and at most 4 x ATR(14).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"kz": [7, 10], "flat_ny": 12, "htf_trend": 20, "target_r": 2.0, "hold": 20}`
+
+### `cat_choch_ny_kz_m15`: CHoCH in the New York killzone
+
+- **Family:** SMC / ICT structure. **Timeframe:** M15.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication (killzones)
+- **Logic:** Reversals that start in the New York killzone often set the day's direction.
+- **Entry:** Long on a bullish M15 CHoCH with a bar opening 07:00-10:00 New York; short on a bearish one.
+- **Exit:** Target 2R; flat from 12:00 New York; at most 20 bars.
+- **Stop:** Beyond the opposite confirmed swing (swing low for longs), at least 0.5 and at most 4 x ATR(14).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"kz": [7, 10], "flat_ny": 12, "target_r": 2.0, "hold": 20}`
+
+### `cat_fvg_retest_h1`: Fair value gap retest with trend
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication
+- **Logic:** Price often returns to an imbalance and continues; enter on the return.
+- **Entry:** Up structure: long when the bar's low reaches the nearest active bullish FVG's upper edge and it closes above the gap's lower edge and above its open. Short mirrored.
+- **Exit:** Target 2R; otherwise exit after 24 bars.
+- **Stop:** Beyond the gap's far edge + 0.1 ATR (0.3-4 ATR).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"target_r": 2.0, "hold": 24}`
+
+### `cat_fvg_ce_h1`: FVG consequent encroachment
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication ('consequent encroachment')
+- **Logic:** The midpoint of a gap is where it is often defended.
+- **Entry:** Up structure: long when the low reaches the midpoint of the nearest bullish FVG and the close is above it. Short mirrored.
+- **Exit:** Target 2R; otherwise exit after 24 bars.
+- **Stop:** Beyond the gap's far edge + 0.1 ATR (0.3-4 ATR).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"target_r": 2.0, "hold": 24}`
+
+### `cat_ifvg_h1`: Inverse FVG
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication
+- **Logic:** When a gap fails and price closes through it, the move tends to continue.
+- **Entry:** Long when a bearish FVG is closed through (inverse bullish FVG); short when a bullish FVG is closed through.
+- **Exit:** Target 3 x ATR(14); otherwise exit after 24 bars.
+- **Stop:** 1.5 x ATR(14).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"stop_atr": 1.5, "target_atr": 3.0, "hold": 24}`
+
+### `cat_sweep_reversal_h1`: Liquidity sweep reversal
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication ('stop hunt' / 'liquidity grab')
+- **Logic:** Stops cluster beyond swings; once taken, price often reverses.
+- **Entry:** Long when the low goes below the last swing low and the close is back above it; short mirrored at the swing high.
+- **Exit:** Target 2R; otherwise exit after 24 bars.
+- **Stop:** Beyond the sweep bar's extreme + 0.1 ATR (0.3-4 ATR).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"target_r": 2.0, "hold": 24}`
+
+### `cat_sweep_choch_h1`: Sweep followed by CHoCH
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication (sweep plus market-structure shift)
+- **Logic:** A stop hunt followed by a structure break against it is a classic reversal set-up.
+- **Entry:** Long on a bullish CHoCH if a low sweep happened in the last 6 bars; short on a bearish CHoCH after a high sweep.
+- **Exit:** Target 2R; otherwise exit after 36 bars.
+- **Stop:** Beyond the lowest low (highest high) of the last 6 bars + 0.1 ATR.
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"within": 6, "target_r": 2.0, "hold": 36}`
+
+### `cat_equal_lows_raid_h1`: Raid on equal highs or lows
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication ('equal highs/lows are liquidity')
+- **Logic:** Equal highs or lows attract stops; the raid on them often reverses.
+- **Entry:** Long on a low sweep when equal lows (two swing lows within 0.1 ATR) were flagged in the last 10 bars; short on a high sweep after equal highs.
+- **Exit:** Target 2R; otherwise exit after 24 bars.
+- **Stop:** Beyond the sweep bar's extreme + 0.1 ATR (0.3-4 ATR).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"need_equal": 10, "target_r": 2.0, "hold": 24}`
+
+### `cat_london_kz_sweep_m15`: Sweep reversal in the London killzone
+
+- **Family:** SMC / ICT structure. **Timeframe:** M15.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication (London killzone)
+- **Logic:** London often raids stops left in Asia before the real move.
+- **Entry:** Long on an M15 low sweep with a bar opening 02:00-05:00 New York; short on a high sweep.
+- **Exit:** Target 2R; flat from 12:00 New York; at most 16 bars.
+- **Stop:** Beyond the sweep bar's extreme + 0.1 ATR.
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"kz": [2, 5], "flat_ny": 12, "target_r": 2.0, "hold": 16}`
+
+### `cat_ny_kz_sweep_m15`: Sweep reversal in the New York killzone
+
+- **Family:** SMC / ICT structure. **Timeframe:** M15.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication (New York killzone)
+- **Logic:** The New York open often raids London's extremes before reversing.
+- **Entry:** Long on an M15 low sweep with a bar opening 07:00-10:00 New York; short on a high sweep.
+- **Exit:** Target 2R; flat from 12:00 New York; at most 16 bars.
+- **Stop:** Beyond the sweep bar's extreme + 0.1 ATR.
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"kz": [7, 10], "flat_ny": 12, "target_r": 2.0, "hold": 16}`
+
+### `cat_pdh_pdl_kz_m15`: Previous-day high/low raid in the NY killzone
+
+- **Family:** SMC / ICT structure. **Timeframe:** M15.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication
+- **Logic:** Yesterday's extremes hold resting orders; a raid on them in the killzone tends to fail.
+- **Entry:** First per day: short when an M15 bar opening 07:00-10:00 New York trades above yesterday's high and closes below it; long mirrored at yesterday's low.
+- **Exit:** Target 2R; flat from 12:00 New York.
+- **Stop:** Beyond the bar's extreme + 0.1 ATR.
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"kz": [7, 10], "flat_ny": 12, "target_r": 2.0}`
+
+### `cat_judas_swing_m15`: Judas swing at the London open
+
+- **Family:** SMC / ICT structure. **Timeframe:** M15.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication ('Judas swing')
+- **Logic:** The London open often fakes one way out of the Asian range before the real move the other way.
+- **Entry:** Asian range = 20:00-00:00 New York. Between 02:00 and 05:00 New York, first time per day: short when the high breaks the range high and the close is back below it; long mirrored.
+- **Exit:** Target = the Asian range width; flat from 12:00 New York.
+- **Stop:** Beyond the bar's extreme + 0.1 ATR (0.3-4 ATR).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"flat_ny": 12}`
+
+### `cat_silver_bullet_m5`: ICT Silver Bullet (10-11 New York)
+
+- **Family:** SMC / ICT structure. **Timeframe:** M5.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication ('Silver Bullet')
+- **Logic:** An imbalance created in the 10-11 New York hour is often retested and respected.
+- **Entry:** M5, bars opening 10:00-11:00 New York, first per day: long when a bullish FVG formed this hour is retested (low into the gap, close above its lower edge); short mirrored.
+- **Exit:** Target 2R; flat from 11:30 New York.
+- **Stop:** Beyond the gap's far edge + 0.1 ATR (0.3-4 ATR).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"target_r": 2.0, "flat_ny": 11.5}`
+
+### `cat_premium_discount_h1`: Buy discount, sell premium
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication (premium and discount arrays)
+- **Logic:** Buy cheap within the current range in an uptrend, sell dear in a downtrend.
+- **Entry:** Up structure: long on the first bullish bar with premium_discount < 0.25 (bottom quarter of the last swing range); short mirrored above 0.75.
+- **Exit:** Target the opposite swing; otherwise exit after 48 bars.
+- **Stop:** Beyond the swing low (high) + 0.1 ATR (0.3-4 ATR).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"discount": 0.25, "hold": 48}`
+
+### `cat_order_block_h1`: Order-block retest
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication ('order blocks')
+- **Logic:** The last down candle before a strong up break marks where buyers stepped in; it often holds on a retest.
+- **Entry:** At a bullish BOS, the order block is the last bearish candle in the prior 10 bars. Within 24 bars, long when a bar's low enters the block and it closes above the block's high. Short mirrored. A close through the block cancels it.
+- **Exit:** Target 2R; otherwise exit after 36 bars.
+- **Stop:** Beyond the block's far edge + 0.1 ATR (0.3-4 ATR).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"lookback": 10, "valid": 24, "target_r": 2.0, "hold": 36}`
+
+### `cat_ote_h1`: Optimal trade entry (62-79% retracement)
+
+- **Family:** SMC / ICT structure. **Timeframe:** H1.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication ('optimal trade entry', Fibonacci 62-79%)
+- **Logic:** Deep but not full retracements after a structure break offer good risk-reward entries.
+- **Entry:** Within 24 bars of a bullish BOS, in an up structure: long on the first bullish bar whose close is 62-79% of the way down from the swing high to the swing low. Short mirrored.
+- **Exit:** Target the swing high (low); otherwise exit after 48 bars.
+- **Stop:** Beyond the swing low (high) + 0.1 ATR (0.3-4 ATR).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"within": 24, "lo": 0.62, "hi": 0.79, "hold": 48}`
+
+### `cat_power_of_three_m15`: Power of three (AMD) at 08:30 New York
+
+- **Family:** SMC / ICT structure. **Timeframe:** M15.
+- **Source:** ICT (Michael J. Huddleston) public video teaching; no formal publication ('power of three': accumulation, manipulation, distribution)
+- **Logic:** A false early move against the day's open, then a recovery through it, often precedes the day's real move.
+- **Entry:** At the bar closing 08:30 New York: long if today's low was more than 2 x ATR(14, M15) below the 00:00 New York open and the close is back above that open (and no equal push above); short mirrored.
+- **Exit:** Flat from 16:00 New York.
+- **Stop:** Beyond the day's extreme so far + 0.1 ATR (0.5-8 ATR).
+- **Data:** XAUUSD bars (mid prices); project structure detectors: swings, BOS/CHoCH, sweeps, FVGs
+- **Parameters (fixed):** `{"manip_atr": 2.0, "flat_ny": 16}`

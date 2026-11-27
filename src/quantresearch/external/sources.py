@@ -45,6 +45,7 @@ FRED_SERIES = {
     "T10YIE": ("10-year breakeven inflation", timedelta(days=1, hours=22), "rates"),
     "DTWEXBGS": ("Broad trade-weighted dollar", timedelta(days=8), "fx"),
     "VIXCLS": ("VIX close", timedelta(days=1, hours=22), "risk"),
+    "GVZCLS": ("CBOE gold ETF volatility index (GVZ) close", timedelta(days=1, hours=22), "risk"),
     "DCOILWTICO": ("WTI crude oil", timedelta(days=8), "commodity"),
     "CPIAUCSL": ("CPI, all urban, revised", timedelta(days=50), "macro"),
     "PCEPI": ("PCE price index, revised", timedelta(days=65), "macro"),
