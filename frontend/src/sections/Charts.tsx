@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { fmt, useFetch } from "@/lib/api";
+import { fmt, useFetch, when } from "@/lib/api";
 import { Card, EmptyState, ErrorBox, Notice, Skeleton } from "@/components/ui";
 import { adx, bbWidthPercentile, ema } from "@/lib/indicators";
 import { PriceChart, type Level, type Line, type Marker } from "@/components/PriceChart";
@@ -156,7 +156,20 @@ export function Charts() {
           )}
         </Card>
       </div>
-      <Notice>History only: no live feed is connected to this chart. Structure and FVG rules are this project&apos;s own definitions; see the README for each.</Notice>
+      <FeedBanner feed={data?.feed} />
     </>
   );
+}
+
+/** States what the chart is really drawing, from the API's own feed status (GET /api/bars -> feed). */
+function FeedBanner({ feed }: { feed?: any }) {
+  const rules = " Structure and FVG rules are this project's own definitions; see the README for each.";
+  if (!feed) return <Notice>{"Feed status unknown until the bars load." + rules}</Notice>;
+  if (feed.state === "live")
+    return <Notice>{`Live: stored history to ${when(feed.warehouse_end)}, then ${String(feed.source).toUpperCase()}'s own closed 1-minute bars to ${when(feed.broker_end)}. Bars after the stored history are the broker's bid plus its spread.` + rules}</Notice>;
+  if (feed.state === "error")
+    return <Notice>{`${String(feed.source).toUpperCase()} is attached but its bar feed failed (${feed.error}). Showing stored history to ${when(feed.warehouse_end)}.` + rules}</Notice>;
+  if (feed.state === "waiting")
+    return <Notice>{`${String(feed.source).toUpperCase()} is attached; it has no closed bars newer than the stored history (${when(feed.warehouse_end)}) yet, for example while the market is closed.` + rules}</Notice>;
+  return <Notice>{`History only: ${feed.reason ?? "no live feed is connected to this chart"}.` + rules}</Notice>;
 }

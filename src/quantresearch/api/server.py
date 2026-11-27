@@ -34,6 +34,7 @@ from quantresearch.strategies import REGISTRY, get
 from quantresearch.timemachine import orchestrate as orch
 from quantresearch.warehouse import calendar as cal
 from quantresearch.warehouse import store as bars
+from quantresearch.warehouse.build import FLAG_BROKER
 
 TIMEFRAMES = {"m1", "m5", "m15", "m30", "h1", "h4", "d1", "d1ny", "mn1"}
 NEWS_DEADLINE_S = 20  # Well inside the 100 s Cloudflare tunnel limit.
@@ -196,7 +197,18 @@ def create_app(services: Services | None = None) -> FastAPI:
                    "fvg_up_low", "fvg_up_high", "fvg_down_low", "fvg_down_high", "premium_discount", "equal_highs", "equal_lows", "flags"]
         out = frame[columns].copy()
         out["time"] = out["ts"].map(lambda t: int(t.timestamp()))
-        return ok({"timeframe": tf, "bars": out.drop(columns=["ts", "close_ts"]).assign(close_time=out["close_ts"].map(lambda t: int(t.timestamp()))).to_dict("records")})
+        return ok({"timeframe": tf, "feed": bar_feed(frame) if end is None else {"live": False, "state": "history", "reason": "a past end time was requested"},
+                   "bars": out.drop(columns=["ts", "close_ts"]).assign(close_time=out["close_ts"].map(lambda t: int(t.timestamp()))).to_dict("records")})
+
+    def bar_feed(frame: pd.DataFrame) -> dict:
+        """What the chart is really showing: stored history only, or history extended by the broker's bars."""
+        if not svc.live.enabled:
+            return {"live": False, "state": "history", "source": None, "reason": f"no live broker is attached ({svc.broker.name})"}
+        status = svc.live.status()
+        from_broker = bool(len(frame)) and bool(int(frame["flags"].iloc[-1]) & FLAG_BROKER)
+        state = "error" if status["error"] else ("live" if status["broker_end"] is not None else "waiting")
+        return {"live": state == "live", "state": state, "source": svc.broker.name, "warehouse_end": status["warehouse_end"],
+                "broker_end": status["broker_end"], "error": status["error"], "last_bar_from_broker": from_broker}
 
     @app.get("/api/coverage")
     def coverage():
