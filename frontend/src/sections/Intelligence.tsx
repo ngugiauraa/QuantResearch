@@ -10,11 +10,15 @@ export function Intelligence() {
   const news = useFetch("/api/intel/news");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const refresh = async () => {
     setBusy(true);
     setError(null);
+    setRefreshNote(null);
     try {
-      await api("/api/intel/news/refresh", { method: "POST" });
+      // The API answers within about 20 s: fresh headlines, or the stored ones with the reason in refresh_error.
+      const result = await api<any>("/api/intel/news/refresh", { method: "POST", timeoutMs: 45000 });
+      if (result?.refresh_error) setRefreshNote(result.refresh_error);
       await news.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -49,6 +53,7 @@ export function Intelligence() {
       <Card title="News">
         <div className="row">
           <button className="btn" onClick={refresh} disabled={busy}>{busy ? "Fetching…" : "Fetch latest headlines"}</button>
+          {refreshNote && <Notice>{refreshNote}</Notice>}
           {news.data?.fetched_at && <span className="muted">Fetched {when(news.data.fetched_at)} from {news.data.source}. {news.data.note}</span>}
         </div>
         <Table columns={["Published", "Headline", "Source", "Tags"]} empty="No headlines yet. Fetch them above. The platform works without news." rows={(news.data?.items ?? []).map((n: any) => [

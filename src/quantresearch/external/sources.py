@@ -64,9 +64,9 @@ CROSS_SYMBOLS = {
 CROSS_START = {"usa500idxusd": "2012-01-01", "lightcmdusd": "2012-01-01"}
 
 
-def http_get(url: str, timeout: int = 90) -> bytes:
+def http_get(url: str, timeout: int = 90, retries: int = RETRIES) -> bytes:
     last: Exception | None = None
-    for attempt in range(RETRIES):
+    for attempt in range(retries):
         try:
             request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -77,7 +77,8 @@ def http_get(url: str, timeout: int = 90) -> bytes:
             last = exc
         except OSError as exc:
             last = exc
-        time.sleep(3 * (attempt + 1))
+        if attempt + 1 < retries:
+            time.sleep(3 * (attempt + 1))
     raise last
 
 

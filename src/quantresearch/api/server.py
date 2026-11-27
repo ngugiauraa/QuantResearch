@@ -36,6 +36,8 @@ from quantresearch.warehouse import calendar as cal
 from quantresearch.warehouse import store as bars
 
 TIMEFRAMES = {"m1", "m5", "m15", "m30", "h1", "h4", "d1", "d1ny", "mn1"}
+NEWS_DEADLINE_S = 20  # Well inside the 100 s Cloudflare tunnel limit.
+NEWS_COOLDOWN_S = 60  # After GDELT says 429, asking again sooner only extends the block.
 
 
 class OrderBody(BaseModel):
@@ -262,12 +264,41 @@ def create_app(services: Services | None = None) -> FastAPI:
         stored = json.loads(path.read_text(encoding="utf-8"))
         return ok({**stored, "items": stored["items"][:limit]})
 
+    news_gate = {"retry_after": 0.0}
+
+    def stored_news(error: str) -> dict:
+        path = svc.p.external / "news.json"
+        stored = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"items": [], "fetched_at": None}
+        return ok({**stored, "items": stored["items"][:40], "refreshed": False, "refresh_error": error})
+
     @app.post("/api/intel/news/refresh")
     def refresh_news():
+        """Fetch fresh headlines from GDELT, or say plainly why not, within NEWS_DEADLINE_S.
+
+        GDELT allows about one request per five seconds per IP and answers 429 beyond that. Retrying (up to 3 x 90 s)
+        outlasted Cloudflare's 100 s tunnel limit and the failure surfaced as a bare 502. Now: one attempt, a hard
+        deadline, a cooldown after a refusal, and a 200 that keeps the stored headlines and carries the reason.
+        """
+        import concurrent.futures as cf
+        import time as _time
+
+        wait = news_gate["retry_after"] - _time.monotonic()
+        if wait > 0:
+            return stored_news(f"GDELT refused the last request (too many requests). Try again in {int(wait) + 1} s; showing the stored headlines.")
+        pool = cf.ThreadPoolExecutor(max_workers=1)
+        job = pool.submit(src.fetch_news_gdelt, getter=lambda url: src.http_get(url, timeout=NEWS_DEADLINE_S, retries=1))
+        pool.shutdown(wait=False)
         try:
-            frame = src.fetch_news_gdelt()
+            frame = job.result(timeout=NEWS_DEADLINE_S)
+        except cf.TimeoutError:
+            return stored_news(f"GDELT did not answer within {NEWS_DEADLINE_S} s. Showing the stored headlines; try again later.")
         except Exception as exc:
-            raise HTTPException(502, f"News source failed: {exc}")
+            code = getattr(exc, "code", None)
+            if code == 429:
+                news_gate["retry_after"] = _time.monotonic() + NEWS_COOLDOWN_S
+                return stored_news(f"GDELT refused the request: too many requests from this IP (it allows about one every 5 s). "
+                                   f"Wait {NEWS_COOLDOWN_S} s and try again; showing the stored headlines.")
+            return stored_news(f"GDELT failed: {type(exc).__name__}: {str(exc)[:200]}. Showing the stored headlines.")
         rows = frame.to_dict("records")
         tagged = xauusd.tag_headlines(rows)
         items = [{"title": t["title"], "url": t["link"], "published_at": t["time"], "tags": t["tags"], "gold_relevant": t["gold_relevant"], "domain": r.get("domain")} for t, r in zip(tagged, rows)]
@@ -276,7 +307,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         (svc.p.external).mkdir(parents=True, exist_ok=True)
         (svc.p.external / "news.json").write_text(json.dumps(to_jsonable(payload)), encoding="utf-8")
         svc.knowledge.ingest_news(rows)
-        return ok({**payload, "items": payload["items"][:40]})
+        return ok({**payload, "items": payload["items"][:40], "refreshed": True, "refresh_error": None})
 
     # ------------------------------------------------------------ research
     @app.get("/api/research/strategies")
