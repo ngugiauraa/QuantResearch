@@ -28,6 +28,8 @@ BAR_COLUMNS = [
 ]
 # Flags describe rows that were kept; nothing is changed because of them.
 FLAG_NO_ASK, FLAG_NO_BID, FLAG_CROSSED, FLAG_SPIKE = 1, 2, 4, 8
+# The row came from the broker (MT5), not the provider archive: bid-only bars, ask = bid + the broker's bar spread.
+FLAG_BROKER = 16
 SPIKE_RETURN = 0.015
 
 

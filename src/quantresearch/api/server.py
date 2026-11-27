@@ -139,7 +139,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             broker_ok = svc.broker.connected()
         except BrokerError:
             pass
-        return ok({"status": "ok", "started_at": svc.started_at, "warehouse_ready": has_bars("m1"), "broker": svc.broker.name, "broker_connected": broker_ok,
+        return ok({"status": "ok", "started_at": svc.started_at, "bar_feed": svc.live.status(), "warehouse_ready": has_bars("m1"), "broker": svc.broker.name, "broker_connected": broker_ok,
                    "mt5": health_snapshot(svc.broker), "live_active": svc.router.live_active, "audit_chain_intact": svc.audit.verify(), "external": external})
 
     @app.get("/api/overview")
@@ -147,7 +147,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         quote = svc.refresh_paper_quote()
         latest_regime = None
         if has_bars("h1"):
-            frame = svc.feature_window("h1", 500)
+            frame = svc.feature_window("h1", 500, closed_only=True)
             usable = frame.dropna(subset=lab.REGIME_INPUTS)
             if len(usable) > 100:
                 # Fitted on earlier bars only, so the latest bar is not labelling itself.
@@ -223,7 +223,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         out = []
         gold = None
         if has_bars("h1"):
-            gold = bars.load_bars("h1", pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=120), p=svc.p)
+            gold = svc.live.load("h1", pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=120))
         for symbol, label in src.CROSS_SYMBOLS.items():
             try:
                 other = ext.load_cross(symbol, "h1", svc.p)
@@ -515,7 +515,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             now = now.tz_localize("UTC") if now.tzinfo is None else now
             kwargs["now"] = now
             kwargs["day"] = kwargs.get("day") or str(now.date())
-            kwargs["bars"] = bars.load_bars(tf, now - pd.Timedelta(days=3), now + pd.Timedelta(minutes=1), as_of=now, p=svc.p)
+            kwargs["bars"] = svc.live.load(tf, now - pd.Timedelta(days=3), now + pd.Timedelta(minutes=1), as_of=now)
         return kwargs
 
     @app.get("/api/skills/logs/all")
@@ -550,7 +550,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         entry = body.entry if body.entry is not None else (quote.ask if body.side > 0 else quote.bid)
         atr = body.atr
         if atr is None and has_bars("h1"):
-            atr = svc.feature_window("h1", 30)["atr_14"].iloc[-1]
+            atr = svc.feature_window("h1", 30, live=False)["atr_14"].iloc[-1]
         request = OrderRequest(body.side, body.lots, entry, body.stop, body.target, body.source, None if atr is None or not np.isfinite(atr) else float(atr))
         result = svc.router.submit(request)
         return ok({"status": result.status, "message": result.message, "lots": result.lots, "fingerprint": result.fingerprint, "ticket": result.ticket, "reasons": result.risk_reasons})

@@ -23,7 +23,7 @@ def tagged(tf):
 
 def test_each_engine_is_computed_on_its_own_timeframe(svc, monkeypatch):
     loaded, prepared = [], {}
-    monkeypatch.setattr(svc, "feature_window", lambda tf, limit, end=None: (loaded.append(tf), tagged(tf))[1])
+    monkeypatch.setattr(svc, "feature_window", lambda tf, limit, end=None, **kw: (loaded.append(tf), tagged(tf))[1])
     for name, defn in REGISTRY.items():
         original = defn.prepare
 
@@ -41,7 +41,7 @@ def test_each_engine_is_computed_on_its_own_timeframe(svc, monkeypatch):
 
 
 def test_a_timeframe_with_no_bars_is_skipped_and_the_others_still_report(svc, monkeypatch):
-    def window(tf, limit, end=None):
+    def window(tf, limit, end=None, **kw):
         if tf == "m5":
             raise FileNotFoundError("No bars built for m5")
         return tagged(tf)
@@ -55,7 +55,7 @@ def test_a_timeframe_with_no_bars_is_skipped_and_the_others_still_report(svc, mo
 
 
 def test_one_failing_engine_does_not_break_the_rest(svc, monkeypatch):
-    monkeypatch.setattr(svc, "feature_window", lambda tf, limit, end=None: tagged(tf))
+    monkeypatch.setattr(svc, "feature_window", lambda tf, limit, end=None, **kw: tagged(tf))
 
     def boom(frame, params):
         raise RuntimeError("engine bug")
@@ -68,7 +68,14 @@ def test_reported_signals_name_their_timeframe(svc, monkeypatch):
     frame = tagged("m5")
     n = len(frame)
     fake = pd.DataFrame({"long_entry": [False] * (n - 1) + [True], "short_entry": False}, index=frame.index)
-    monkeypatch.setattr(svc, "feature_window", lambda tf, limit, end=None: frame if tf == "m5" else (_ for _ in ()).throw(FileNotFoundError()))
+    monkeypatch.setattr(svc, "feature_window", lambda tf, limit, end=None, **kw: frame if tf == "m5" else (_ for _ in ()).throw(FileNotFoundError()))
     monkeypatch.setattr(REGISTRY["london_open_momentum"], "prepare", lambda f, p: fake)
     out = svc.recent_signals()
     assert out == [{"strategy": "london_open_momentum", "timeframe": "m5", "time": frame["close_ts"].iloc[-1], "side": "long"}]
+
+
+def test_signals_are_computed_on_closed_bars_only(svc, monkeypatch):
+    calls = []
+    monkeypatch.setattr(svc, "feature_window", lambda tf, limit, end=None, **kw: (calls.append(kw), tagged(tf))[1])
+    svc.recent_signals()
+    assert calls and all(kw.get("closed_only") is True for kw in calls)

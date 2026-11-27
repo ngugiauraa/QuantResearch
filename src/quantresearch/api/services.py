@@ -28,6 +28,7 @@ from quantresearch.skills.registry import SkillLog
 from quantresearch.timemachine import orchestrate as orch
 from quantresearch.timemachine.replay import ReplaySession
 from quantresearch.warehouse import store as bars
+from quantresearch.warehouse.live import LiveBars
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ class Services:
         self.risk = RiskEngine(self._load_limits(), RiskState(self.p.app / "risk.sqlite"), news_schedule=self._event_schedule)
         self.audit = AuditLog(self.p.app / "audit.sqlite")
         self.broker = self._make_broker()
+        # Warehouse history plus, with MT5 attached, the broker's bars after the warehouse ends.
+        self.live = LiveBars(self.broker, self.p)
         mode = Mode.PAPER if self.broker.is_simulated else Mode.RESEARCH
         self.router = OrderRouter(self.broker, self.risk, self.audit, mode)
         self.knowledge = KnowledgeBase(path=self.p.app / "knowledge.sqlite")
@@ -116,7 +119,7 @@ class Services:
             tf = defn.signal_tf
             if tf not in frames:
                 try:
-                    frames[tf] = self.feature_window(tf, window)
+                    frames[tf] = self.feature_window(tf, window, closed_only=True)
                 except FileNotFoundError:
                     frames[tf] = None
             frame = frames[tf]
@@ -134,12 +137,17 @@ class Services:
                               "side": "long" if hit["long_entry"].iloc[-1] else "short"})
         return found
 
-    def feature_window(self, tf: str, limit: int, end=None) -> pd.DataFrame:
-        """The most recent `limit` bars with features. Extra bars are loaded first so warm-up is complete."""
+    def feature_window(self, tf: str, limit: int, end=None, closed_only: bool = False, live: bool = True) -> pd.DataFrame:
+        """The most recent `limit` bars with features. Extra bars are loaded first so warm-up is complete.
+
+        `live` includes the broker's bars after the warehouse ends (MT5 only). `closed_only` drops a bar still forming,
+        which signals need so a rule cannot fire and then vanish within the same bar.
+        """
         seconds = {"m1": 60, "m5": 300, "m15": 900, "m30": 1800, "h1": 3600, "h4": 14400, "d1": 86400, "d1ny": 86400, "mn1": 2678400}[tf]
         stop = pd.Timestamp.now(tz="UTC") if end is None else pd.Timestamp(end, tz="UTC")
         begin = stop - pd.Timedelta(seconds=seconds * (limit + 400) * 1.7)
-        frame = bars.load_bars(tf, begin, stop, p=self.p)
+        as_of = stop if closed_only else None
+        frame = self.live.load(tf, begin, stop, as_of) if live else bars.load_bars(tf, begin, stop, as_of, p=self.p)
         return build_features(frame).tail(limit).reset_index(drop=True)
 
     # ------------------------------------------------------------ replays

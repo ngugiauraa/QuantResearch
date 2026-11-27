@@ -118,6 +118,29 @@ class Mt5Broker:
         return SymbolSpec(self.symbol_name, s.digits, s.volume_min, s.volume_max, s.volume_step, s.trade_contract_size,
                           s.point, s.trade_stops_level)
 
+    def bars_m1(self, start: datetime, end: datetime) -> list[dict]:
+        """Closed and forming M1 bars with start <= open time < end, read-only. Times are UTC.
+
+        MT5 stamps bars in the broker's server time. QR_MT5_UTC_OFFSET_HOURS says how far that is ahead of UTC
+        (0 for Exness). `spread` is the broker's spread for the bar in points; `point` converts it to price.
+        """
+        import os
+
+        self.ensure_connected()
+        offset = timedelta(hours=float(os.environ.get("QR_MT5_UTC_OFFSET_HOURS", "0")))
+        rows = self.mt5.copy_rates_range(self.symbol_name, self.mt5.TIMEFRAME_M1, start + offset, end + offset)
+        if rows is None:
+            raise BrokerError(f"copy_rates_range failed for {self.symbol_name}: {self.mt5.last_error()}")
+        info = self.mt5.symbol_info(self.symbol_name)
+        point = float(info.point) if info is not None else 0.0
+        out = []
+        for r in rows:
+            opened = datetime.fromtimestamp(int(r["time"]), timezone.utc) - offset
+            if start <= opened < end:
+                out.append({"ts": opened, "open": float(r["open"]), "high": float(r["high"]), "low": float(r["low"]), "close": float(r["close"]),
+                            "tick_volume": float(r["tick_volume"]), "spread": float(r["spread"]) * point})
+        return out
+
     def spread(self) -> float:
         q = self.quote()
         return q.ask - q.bid
