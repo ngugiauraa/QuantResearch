@@ -56,7 +56,7 @@ class Services:
             from quantresearch.execution.mt5_adapter import Mt5Broker
             from quantresearch.execution.secrets import load_mt5_credentials
 
-            broker = Mt5Broker(credentials=load_mt5_credentials(), audit=lambda e, d: self.audit.write(e, d))
+            broker = Mt5Broker(symbol=os.environ.get("QR_MT5_SYMBOL", "XAUUSD"), credentials=load_mt5_credentials(), audit=lambda e, d: self.audit.write(e, d))
             broker.connect()
             return broker
         return PaperBroker(self.p.app / "paper.sqlite")
