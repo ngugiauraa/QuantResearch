@@ -454,6 +454,495 @@
    },
    "needs": [],
    "macro": []
+  },
+  {
+   "name": "cat_rsi2_d1",
+   "title": "Connors RSI(2) reversion, daily",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "d1",
+   "source": "Larry Connors and Cesar Alvarez, 'Short Term Trading Strategies That Work' (2008)",
+   "logic": "In an uptrend, a very oversold two-day RSI tends to bounce; the mirror in a downtrend.",
+   "entry": "Long when close > SMA(200) and RSI(2) < 10; short when close < SMA(200) and RSI(2) > 90.",
+   "exit": "Exit long when the close is above SMA(5); exit short when below SMA(5); at most 10 days.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe (the book uses no stop; this one is catastrophic).",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "low": 10.0,
+    "high": 90.0,
+    "stop_atr": 3.0,
+    "hold": 10
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_rsi2_h1",
+   "title": "Connors RSI(2) reversion, hourly",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "h1",
+   "source": "Connors and Alvarez (2008), applied intraday; own timeframe choice",
+   "logic": "The same oversold-bounce idea on hourly bars.",
+   "entry": "Long when close > SMA(200) and RSI(2) < 10; short when close < SMA(200) and RSI(2) > 90 (hourly bars).",
+   "exit": "Exit long above SMA(5), short below SMA(5); at most 24 bars.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "low": 10.0,
+    "high": 90.0,
+    "stop_atr": 2.0,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_three_down_d1",
+   "title": "Three down days in an uptrend",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "d1",
+   "source": "Larry Connors, 'How Markets Really Work' (2004)",
+   "logic": "Several losing days in a row inside an uptrend are a pullback to buy.",
+   "entry": "Long after three consecutive lower closes with close > SMA(200); short after three higher closes with close < SMA(200).",
+   "exit": "Exit long above SMA(5), short below SMA(5); at most 10 days.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "stop_atr": 3.0,
+    "hold": 10
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_double_seven_d1",
+   "title": "Double 7s",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "d1",
+   "source": "Larry Connors and Cesar Alvarez, 'Short Term Trading Strategies That Work' (2008)",
+   "logic": "A one-week low in an uptrend tends to revert to a one-week high.",
+   "entry": "Long when the close is the lowest of the last 7 closes and above SMA(200); short mirrored below SMA(200).",
+   "exit": "Exit long at a 7-day closing high; exit short at a 7-day closing low; at most 15 days.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "stop_atr": 3.0,
+    "hold": 15
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_ibs_d1",
+   "title": "Internal bar strength",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "d1",
+   "source": "Pagonidis, 'The IBS Effect: Mean Reversion in Equity ETFs' (NAAIM, 2013)",
+   "logic": "A close at the bottom of the day's range tends to be followed by a better day.",
+   "entry": "IBS = (close - low) / (high - low). Long when IBS < 0.2; short when IBS > 0.8.",
+   "exit": "Exit after one day.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "low": 0.2,
+    "high": 0.8,
+    "stop_atr": 2.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_bb_fade_h1",
+   "title": "Bollinger fade in low ADX",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "h1",
+   "source": "John Bollinger (2001); ranging filter by ADX from Wilder (1978)",
+   "logic": "In a range, a close outside the bands tends to come back to the middle.",
+   "entry": "When ADX(14) < 20: long when the close is below the lower band (SMA20 - 2 SD); short when above the upper band.",
+   "exit": "Exit at the 20-bar SMA; at most 24 bars.",
+   "stop": "1.5 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "adx_max": 20.0,
+    "stop_atr": 1.5,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_zscore60_h4",
+   "title": "60-bar z-score fade on H4",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "h4",
+   "source": "Generic statistical mean reversion; own parameters",
+   "logic": "Stretched far from its average, gold tends to snap back.",
+   "entry": "Long when the 60-bar z-score crosses below -2; short when it crosses above +2.",
+   "exit": "Exit at the 60-bar mean; at most 30 bars.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "z": 2.0,
+    "stop_atr": 2.0,
+    "hold": 30
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_keltner_fade_h1",
+   "title": "Keltner fade (2.5 ATR) in low ADX",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "h1",
+   "source": "Linda Bradford Raschke's Keltner usage; own fade parameters",
+   "logic": "Outside a wide ATR channel in a quiet market is too far; trade back to the average.",
+   "entry": "When ADX(14) < 20: long when the close crosses below EMA(20) - 2.5 x ATR; short when it crosses above EMA(20) + 2.5 x ATR.",
+   "exit": "Exit at EMA(20); at most 24 bars.",
+   "stop": "1.5 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "k": 2.5,
+    "adx_max": 20.0,
+    "stop_atr": 1.5,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_rsi_pullback_h4",
+   "title": "RSI(14) pullback with the 200-bar trend",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "h4",
+   "source": "Common trend-pullback rule (e.g. Andrew Cardwell's RSI ranges); own parameters",
+   "logic": "In an uptrend RSI rarely stays below 35, so a dip there is a pullback to buy.",
+   "entry": "Long when close > SMA(200) and RSI(14) crosses below 35; short when close < SMA(200) and RSI(14) crosses above 65.",
+   "exit": "Exit long when RSI > 55, short when RSI < 45; at most 30 bars.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "low": 35.0,
+    "high": 65.0,
+    "exit_long": 55.0,
+    "exit_short": 45.0,
+    "stop_atr": 2.0,
+    "hold": 30
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_quiet_fade_h1",
+   "title": "Fade stretches when volatility is contracting",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "h1",
+   "source": "Own idea",
+   "logic": "When the market is calming down, extremes are more likely noise than a new trend.",
+   "entry": "When ATR(14)/ATR(50) < 0.8: long when the 20-bar z-score < -2; short when > +2.",
+   "exit": "Exit when the z-score crosses zero; at most 24 bars.",
+   "stop": "1.5 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "atr_ratio_max": 0.8,
+    "z": 2.0,
+    "stop_atr": 1.5,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_turtle_soup_d1",
+   "title": "Turtle Soup (failed 20-day breakout)",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "d1",
+   "source": "Linda Bradford Raschke and Laurence Connors, 'Street Smarts' (1995)",
+   "logic": "Breakout traders get trapped when a new 20-day extreme fails the same day.",
+   "entry": "Long when the low breaks the prior 20-day low (made at least 4 days earlier) and the close is back above it; short mirrored.",
+   "exit": "Target 1.5 x the stop distance; otherwise exit after 5 days.",
+   "stop": "Just beyond the day's extreme: close - low for a long (at least 0.25 ATR).",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "n": 20,
+    "age": 4,
+    "target_r": 1.5,
+    "hold": 5
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_80_20_d1",
+   "title": "80-20 reversal",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "d1",
+   "source": "Linda Bradford Raschke and Laurence Connors, 'Street Smarts' (1995)",
+   "logic": "A day that runs from top to bottom often sees a final flush, then a reversal the next day.",
+   "entry": "If yesterday opened in its top 20% and closed in its bottom 20%: long today when the low breaks yesterday's low and the close is back above it. Short mirrored.",
+   "exit": "Exit after 3 days.",
+   "stop": "Today's extreme (at least 0.25 ATR).",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "hold": 3
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_pdh_pdl_fade_h1",
+   "title": "Failed break of the previous day's high/low",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "h1",
+   "source": "Common intraday level rule; own parameters",
+   "logic": "Stops sit beyond yesterday's extremes; once taken, price often returns into the range.",
+   "entry": "First time each COMEX day: long when an H1 bar's low is below yesterday's low and it closes above it; short mirrored at yesterday's high.",
+   "exit": "Target the middle of yesterday's range; otherwise exit after 12 bars.",
+   "stop": "The bar's extreme (at least 0.3 ATR).",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "hold": 12
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_weekend_gap_fade_h1",
+   "title": "Weekend gap fade",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "h1",
+   "source": "Common gap-fill belief; see also the project's overreaction engine",
+   "logic": "Weekend gaps in gold often fill as the week's trading starts.",
+   "entry": "On the first H1 bar after the weekend: if open - Friday close exceeds 0.5 x ATR and the bar has not closed back through Friday's close, fade the gap.",
+   "exit": "Target Friday's close; otherwise exit after 24 bars.",
+   "stop": "The size of the gap.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "gap_atr": 0.5,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_vwap_fade_m15",
+   "title": "Session VWAP 2-SD fade",
+   "family": "mean_reversion",
+   "batch": 2,
+   "timeframe": "m15",
+   "source": "Common intraday VWAP-band reversion; own parameters",
+   "logic": "Far from the day's volume-weighted average, price tends to come back to it.",
+   "entry": "From the 8th M15 bar of the COMEX day: long on the first close below VWAP - 2 x the volume-weighted SD; short above VWAP + 2 SD.",
+   "exit": "Exit at VWAP; at most 16 bars.",
+   "stop": "1.5 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars",
+    "provider tick volume as the volume weight"
+   ],
+   "missing_data": [],
+   "params": {
+    "k": 2.0,
+    "min_bars": 8,
+    "stop_atr": 1.5,
+    "hold": 16
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_bb_squeeze_h4",
+   "title": "Bollinger squeeze breakout",
+   "family": "volatility",
+   "batch": 2,
+   "timeframe": "h4",
+   "source": "John Bollinger, 'Bollinger on Bollinger Bands' (2001), the Squeeze",
+   "logic": "Very narrow bands come before big moves; trade the direction of the break.",
+   "entry": "If band width was within 5% of its 125-bar low at any of the last 5 bars: long when the close crosses above the upper band, short below the lower band.",
+   "exit": "Exit long below the 20-bar SMA, short above it.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "lookback": 125,
+    "tolerance": 0.05,
+    "within": 5,
+    "stop_atr": 2.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_ttm_squeeze_h1",
+   "title": "TTM Squeeze release",
+   "family": "volatility",
+   "batch": 2,
+   "timeframe": "h1",
+   "source": "John Carter, 'Mastering the Trade' (2005)",
+   "logic": "Bands inside the Keltner channel mean stored energy; the first bar out shows the release direction.",
+   "entry": "After at least 6 bars with BB(20, 2) inside KC(EMA20 +/- 1.5 ATR), on the first bar outside: long if close - mean(Donchian mid, SMA20) > 0, short if < 0.",
+   "exit": "Exit when that momentum falls two bars in a row (rises for shorts); at most 24 bars.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "kc": 1.5,
+    "min_squeeze": 6,
+    "stop_atr": 2.0,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_range_expansion_h1",
+   "title": "Range-expansion bar follow-through",
+   "family": "volatility",
+   "batch": 2,
+   "timeframe": "h1",
+   "source": "Own idea, after Crabel's range-expansion observations",
+   "logic": "A very wide bar closing at its high shows strong buying that often continues briefly.",
+   "entry": "If the bar's range > 2 x the previous bar's ATR(14): long if it closes in its top quarter, short if in its bottom quarter.",
+   "exit": "Exit after 6 bars.",
+   "stop": "1.5 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "k": 2.0,
+    "stop_atr": 1.5,
+    "hold": 6
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_nr4_ib_h4",
+   "title": "NR4 inside-bar breakout",
+   "family": "volatility",
+   "batch": 2,
+   "timeframe": "h4",
+   "source": "Toby Crabel (1990), the NR4/IB pattern",
+   "logic": "An inside bar that is also the narrowest of four is maximum compression; the break shows direction.",
+   "entry": "If the previous bar was NR4 and inside: long when the close is above its high, short when below its low.",
+   "exit": "Exit after 6 bars.",
+   "stop": "The setup bar's opposite extreme.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "hold": 6
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_calm_breakout_h1",
+   "title": "Breakout from low ATR percentile",
+   "family": "volatility",
+   "batch": 2,
+   "timeframe": "h1",
+   "source": "Own idea (volatility-regime breakout filter)",
+   "logic": "Breakouts out of quiet markets are more likely to start real moves than breakouts in noisy ones.",
+   "entry": "If the previous bar's ATR(14) percentile over 500 bars was below 20%: long when the close is above the prior 24-bar high, short below the prior 24-bar low.",
+   "exit": "Exit after 24 bars.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "lookback": 500,
+    "calm": 0.2,
+    "n": 24,
+    "stop_atr": 2.0,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_vix_spike_d1",
+   "title": "Long gold after a VIX spike",
+   "family": "volatility",
+   "batch": 2,
+   "timeframe": "d1",
+   "source": "Safe-haven literature, e.g. Baur and Lucey, 'Is Gold a Hedge or a Safe Haven?', Financial Review 45(2), 2010",
+   "logic": "When fear jumps, money tends to flow into gold for a while.",
+   "entry": "Long on the day the VIX's 5-observation change exceeds 25% of its level 5 observations ago (VIX as published by that close). Long only.",
+   "exit": "Exit after 10 days.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD daily bars",
+    "VIX close (FRED VIXCLS)"
+   ],
+   "missing_data": [],
+   "params": {
+    "rise": 0.25,
+    "stop_atr": 3.0,
+    "hold": 10
+   },
+   "needs": [],
+   "macro": []
   }
  ]
 }

@@ -8,10 +8,10 @@ docs/strategy_catalogue.json is still here, so the record of what was tried stay
 """
 from __future__ import annotations
 
-from quantresearch.strategies.catalogue import batch1_trend
+from quantresearch.strategies.catalogue import batch1_trend, batch2_reversion
 from quantresearch.strategies.catalogue.common import CatalogueEntry
 
-ENTRIES: list[CatalogueEntry] = [*batch1_trend.ENTRIES]
+ENTRIES: list[CatalogueEntry] = [*batch1_trend.ENTRIES, *batch2_reversion.ENTRIES]
 CATALOGUE: dict[str, CatalogueEntry] = {e.name: e for e in ENTRIES}
 
 if len(CATALOGUE) != len(ENTRIES):
