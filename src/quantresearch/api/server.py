@@ -139,7 +139,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             broker_ok = svc.broker.connected()
         except BrokerError:
             pass
-        return ok({"status": "ok", "started_at": svc.started_at, "bar_feed": svc.live.status(), "warehouse_ready": has_bars("m1"), "broker": svc.broker.name, "broker_connected": broker_ok,
+        return ok({"status": "ok", "started_at": svc.started_at, "bar_feed": svc.live.status(), "warehouse_sync": svc.sync_status, "warehouse_ready": has_bars("m1"), "broker": svc.broker.name, "broker_connected": broker_ok,
                    "mt5": health_snapshot(svc.broker), "live_active": svc.router.live_active, "audit_chain_intact": svc.audit.verify(), "external": external})
 
     @app.get("/api/overview")

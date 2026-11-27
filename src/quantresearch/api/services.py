@@ -53,6 +53,31 @@ class Services:
         self.jobs: dict[str, dict] = {}
         self.started_at = datetime.now(timezone.utc)
         self.router.reconcile()
+        self.sync_status: dict = {"enabled": False}
+        if self.live.enabled and os.environ.get("QR_WAREHOUSE_SYNC", "1") != "0":
+            threading.Thread(target=self._daily_sync, name="warehouse-sync", daemon=True).start()
+
+    def _daily_sync(self, check_every_s: float = 900.0) -> None:
+        """Once per UTC day while the API runs: Dukascopy for the current month, then MT5 bars for any gap.
+
+        Read-only towards the broker. Turn off with QR_WAREHOUSE_SYNC=0; run by hand with python -m quantresearch.warehouse.mt5_sync.
+        """
+        import time
+
+        from quantresearch.warehouse import mt5_sync
+
+        self.sync_status = {"enabled": True, "last_day": None, "last_error": None}
+        while True:
+            today = datetime.now(timezone.utc).date().isoformat()
+            if self.sync_status["last_day"] != today:
+                try:
+                    report = mt5_sync.sync(self.broker, self.p)
+                    self.sync_status.update(last_day=today, last_error=None, warehouse_end=report.get("warehouse_end_after"))
+                    self.audit.write("warehouse_synced", {"warehouse_end": report.get("warehouse_end_after"), "days": list(report.get("broker_days", {}))})
+                except Exception as exc:  # Retried at the next check; the API keeps serving warehouse plus live bars.
+                    log.exception("Daily warehouse sync failed")
+                    self.sync_status["last_error"] = f"{type(exc).__name__}: {exc}"
+            time.sleep(check_every_s)
 
     def _make_broker(self):
         if os.environ.get("QR_BROKER") == "mt5":

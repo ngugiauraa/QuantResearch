@@ -270,7 +270,7 @@ Full reports: `data/research/reports/*_latest.json`, and the Quantitative Resear
 
 **Functional limits:**
 
-- **Charts are historical.** Live candles are not implemented. Live quotes appear only in the terminal, and only with MT5.
+- **Live bars need MT5.** With `QR_BROKER=mt5`, charts, signals and the overview add the broker's closed M1 bars after the warehouse's last bar (flag 16 marks them). Without MT5, charts end at the last build.
 - Without MT5, the paper broker's price is the last stored bar, and the dashboard says so.
 - Alerts run when checked. There is no background scheduler, by design of the upstream skill.
 - Deep learning (LSTM, GRU, transformers) and financial NLP are **not implemented**, deliberately: baselines showed no signal, and your specification requires measured value first.
@@ -767,6 +767,8 @@ Controls call real services, and there are no hardcoded statistics. Empty states
 | `QR_CF_ACCESS_TEAM` | none | Your Access team name, as in `https://<team>.cloudflareaccess.com`. The signing keys are fetched from it at startup and refreshed every 24 hours |
 | `NEXT_PUBLIC_API_URL` | none | Build-time, for the dashboard: the API address for a hosted copy. Compiled into the JavaScript, so the dashboard must be behind Cloudflare Access. Never commit it |
 | `QR_MT5_LOGIN`, `QR_MT5_PASSWORD`, `QR_MT5_SERVER` | none | Session-only fallback. Prefer the credential store |
+| `QR_MT5_UTC_OFFSET_HOURS` | 0 | Hours the MT5 server clock is ahead of UTC (Exness: 0). Used to stamp broker bars in UTC |
+| `QR_WAREHOUSE_SYNC` | 1 | With MT5 attached, the API brings the warehouse up to date once per UTC day. `0` turns that off |
 | `SEC_USER_AGENT` | none | Your name and email, for SEC-based skills |
 
 Risk limits are saved to `data/app/risk_limits.json` from the dashboard. Parameters and grids are in `strategies/engines.py`.
@@ -900,6 +902,8 @@ No external AI service is called by this platform.
 ## 33. Operational workflows
 
 **Monthly data refresh:** rerun `fetch_months m1`, `build`, `audit`, and `external.store`. If the audit fails, investigate before using the data.
+
+**Daily top-up from MT5:** `python -m quantresearch.warehouse.mt5_sync` tries Dukascopy for the current month, then copies the MT5 terminal's M1 bars for anything still missing (archived under `warehouse/broker/mt5/m1`), rebuilds the affected months and writes `reports/mt5_sync.json`. Broker rows only fill days Dukascopy lacks and minutes after its last bar, carry flag 16, and are replaced when Dukascopy later covers them. The API runs the same sync once per UTC day while MT5 is attached (`QR_WAREHOUSE_SYNC=0` turns it off). To run it without the API, schedule the command in Windows Task Scheduler.
 
 **Researching a change:** edit the engine, run its tests and the look-ahead test, run `research.experiment <name>`. Treat the holdout as spent; a truly unseen test now needs new data as time passes.
 

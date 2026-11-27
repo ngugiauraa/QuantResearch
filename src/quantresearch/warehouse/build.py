@@ -89,6 +89,35 @@ def load_month_side(year: int, month: int, side: str, p: Paths) -> tuple[pd.Data
     return merged, inputs, source
 
 
+def broker_m1_path(p: Paths, day: date) -> Path:
+    """One UTC day of the broker's (MT5) M1 bars, in BAR_COLUMNS layout. Written by warehouse.mt5_sync."""
+    return p.warehouse / "broker" / "mt5" / "m1" / str(day.year) / f"{day}.parquet"
+
+
+def load_broker_month(year: int, month: int, p: Paths) -> tuple[pd.DataFrame | None, dict]:
+    folder = p.warehouse / "broker" / "mt5" / "m1" / str(year)
+    files = sorted(folder.glob(f"{year}-{month:02d}-*.parquet")) if folder.exists() else []
+    if not files:
+        return None, {}
+    inputs = {f.relative_to(p.root).as_posix(): _sha(f) for f in files}
+    frame = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
+    frame["ts"] = pd.to_datetime(frame["ts"], utc=True)
+    return frame.drop_duplicates("ts").sort_values("ts", ignore_index=True), inputs
+
+
+def broker_fill(provider_ts: pd.Series, broker: pd.DataFrame) -> pd.DataFrame:
+    """The broker's rows the provider lacks: whole UTC days with no provider bars, and minutes after the provider's last bar.
+
+    The provider always wins: broker rows never sit between provider rows. A later provider download moves the
+    provider's last bar forward, so the next build drops the broker rows it now covers.
+    """
+    if provider_ts.empty:
+        return broker
+    covered = set(provider_ts.dt.date)
+    keep = ~broker["ts"].dt.date.isin(covered) | (broker["ts"] > provider_ts.max())
+    return broker[keep]
+
+
 def build_month(year: int, month: int, p: Paths | None = None) -> dict:
     p = p or paths()
     bids, asks, rejected, inputs, sources = [], [], [], {}, {}
@@ -103,13 +132,30 @@ def build_month(year: int, month: int, p: Paths | None = None) -> dict:
         if bad.any():
             rejected.append(frame[bad].assign(side=side, reason=reason[bad]))
         store.append(frame[~bad])
-    if not bids and not asks:
+    broker, used = load_broker_month(year, month, p)
+    inputs.update(used)
+    if not bids and not asks and broker is None:
         return {"year": year, "month": month, "rows": 0, "rejected": 0}
     bid = pd.concat(bids) if bids else pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"])
     ask = pd.concat(asks) if asks else pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"])
     bars = bid.rename(columns={c: f"bid_{c}" for c in bid.columns if c != "ts"}).merge(
         ask.rename(columns={c: f"ask_{c}" for c in ask.columns if c != "ts"}), on="ts", how="outer"
     ).sort_values("ts", ignore_index=True)
+    from_broker = np.zeros(len(bars), dtype=bool)
+    if broker is not None:
+        fill = broker_fill(bars["ts"], broker)
+        if len(fill):
+            sources["broker"] = f"mt5 ({len(fill)} rows)"
+            bars = pd.concat([bars, fill.drop(columns=["m1_count", "spread_mean", "spread_max", "flags"])], ignore_index=True)
+            from_broker = np.r_[from_broker, np.ones(len(fill), dtype=bool)]
+            # A month with no provider rows starts from untyped empty frames; give the merged columns real types.
+            bars["ts"] = pd.to_datetime(bars["ts"], utc=True)
+            numeric = [c for c in bars.columns if c != "ts"]
+            bars[numeric] = bars[numeric].astype("float64")
+            order = bars["ts"].argsort(kind="stable").to_numpy()
+            bars, from_broker = bars.iloc[order].reset_index(drop=True), from_broker[order]
+    if bars.empty:
+        return {"year": year, "month": month, "rows": 0, "rejected": 0}
     bars["m1_count"] = 1
     spread = bars["ask_close"] - bars["bid_close"]
     bars["spread_mean"] = spread
@@ -122,6 +168,7 @@ def build_month(year: int, month: int, p: Paths | None = None) -> dict:
     ret = bars["bid_close"].pct_change(fill_method=None)
     spike = (ret.abs() > SPIKE_RETURN) & (ret.shift(-1).abs() > SPIKE_RETURN) & (np.sign(ret) != np.sign(ret.shift(-1)))
     flags[spike.fillna(False).to_numpy()] |= FLAG_SPIKE
+    flags[from_broker] |= FLAG_BROKER
     bars["flags"] = flags
     _write_tf(bars[BAR_COLUMNS], "m1", year, month, p)
     if rejected:
@@ -191,6 +238,27 @@ def build_higher(p: Paths | None = None, frames=tfs.BUILT_FROM_M1) -> dict:
     counts = {}
     for tf in frames:
         bars = aggregate(m1, tf)
+        counts[tf] = int(len(bars))
+        for (y, m), part in bars.groupby([bars["ts"].dt.year, bars["ts"].dt.month]):
+            _write_tf(part, tf, int(y), int(m), p)
+    return counts
+
+
+def build_higher_since(first: pd.Period, p: Paths | None = None, frames=tfs.BUILT_FROM_M1) -> dict:
+    """Rebuild higher timeframes for `first` onwards without reading all of M1.
+
+    Starts one month earlier and rewrites that month too, so bars spanning the boundary (H4, New York days) are
+    whole. A bar opening before that month (a New York day labelled on its last evening) is never written here.
+    """
+    from quantresearch.warehouse import store
+
+    p = p or paths()
+    since = (first - 1).start_time.tz_localize("UTC")
+    m1 = store.load_bars("m1", since, p=p)[BAR_COLUMNS]
+    counts = {}
+    for tf in frames:
+        bars = aggregate(m1, tf)
+        bars = bars[bars["ts"] >= since]
         counts[tf] = int(len(bars))
         for (y, m), part in bars.groupby([bars["ts"].dt.year, bars["ts"].dt.month]):
             _write_tf(part, tf, int(y), int(m), p)
