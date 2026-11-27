@@ -109,6 +109,9 @@ def run(name: str, p: Paths | None = None) -> dict:
     features = research_frame(item, p)
     report = ex.full_report(defn, features, dataset=ex.dataset_version(p))
     daily = np.asarray(report.pop("_oos_daily", []), dtype="float64")
+    returns_dir = p.research / "catalogue_returns"
+    returns_dir.mkdir(parents=True, exist_ok=True)
+    np.save(returns_dir / f"{name}.npy", daily)  # Kept so rescore() can judge every strategy against the final trial count.
     report.update(catalogue=True, family=item.family, batch=item.batch, documentation=item.as_dict(),
                   data_coverage={need: _coverage(features, need) for need in defn.needs})
     book = TrialBook(p)
@@ -128,6 +131,11 @@ def run(name: str, p: Paths | None = None) -> dict:
     finally:
         ledger.close()
     report["report_path"] = path.relative_to(p.root).as_posix()
+    # Store the dated file's path in both copies, so a later rescore updates the right one.
+    for target in (path, path.parent / f"{name}_latest.json"):
+        saved = json.loads(target.read_text(encoding="utf-8"))
+        saved["report_path"] = report["report_path"]
+        target.write_text(json.dumps(saved, indent=1, default=ex._json_default), encoding="utf-8")
     return report
 
 
@@ -158,6 +166,38 @@ def hours_since(times, schedule):
     seen = pos >= 0
     out[seen] = (now[seen] - grid[pos[seen]]) / 3.6e12
     return pd.Series(out, index=times.index)
+
+
+def rescore(p: Paths | None = None) -> dict[str, dict]:
+    """Re-judge every catalogue strategy's latest report against the trial book as it stands now.
+
+    A strategy run early faced a smaller trial count than one run late. Rescoring puts all of them against the same,
+    final count. It changes only the project-wide deflation and the verdict built on it; the run's own numbers are not
+    touched. The report records when it was rescored and the previous verdict.
+    """
+    p = p or paths()
+    folder = p.research / "reports"
+    book = TrialBook(p)
+    out = {}
+    try:
+        for name in cat.CATALOGUE:
+            latest, returns = folder / f"{name}_latest.json", p.research / "catalogue_returns" / f"{name}.npy"
+            if not latest.exists() or not returns.exists():
+                continue
+            report = json.loads(latest.read_text(encoding="utf-8"))
+            project = project_deflated_sharpe(np.load(returns), book)
+            previous = report.get("catalogue_verdict", {}).get("label")
+            report["project_multiple_testing"] = {**project, "book": book.summary(), "rescored_at": datetime.now(timezone.utc).isoformat(),
+                                                  "note": "Counts every strategy variant ever evaluated by the engines and the catalogue."}
+            report["catalogue_verdict"] = {**catalogue_verdict(report, project), "previous_label": previous}
+            text = json.dumps(report, indent=1, default=ex._json_default)
+            latest.write_text(text, encoding="utf-8")
+            if report.get("report_path"):
+                (p.root / report["report_path"]).write_text(text, encoding="utf-8")
+            out[name] = report["catalogue_verdict"]
+    finally:
+        book.close()
+    return out
 
 
 def _coverage(features, need: str) -> dict:
@@ -288,8 +328,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch", type=int, help="Only strategies from this catalogue batch")
     ap.add_argument("--queued", action="store_true", help="Run what the dashboard queued, then stop")
     ap.add_argument("--one", help=argparse.SUPPRESS)
+    ap.add_argument("--rescore", action="store_true", help="Re-judge every catalogue report against the current trial count")
     args = ap.parse_args(argv)
     p = paths()
+    if args.rescore:
+        for name, v in rescore(p).items():
+            print(json.dumps({"strategy": name, **v}, default=ex._json_default), flush=True)
+        return 0
     if args.one:
         report = run(args.one, p)
         print(json.dumps({"strategy": args.one, **report["catalogue_verdict"]}, default=ex._json_default))

@@ -119,3 +119,38 @@ def test_full_report_carries_daily_returns_privately_and_the_ledger_drops_them(p
     path = ledger.add(report)
     ledger.close()
     assert "_oos_daily" not in json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_engine_training_sharpes_count_towards_n_but_not_the_spread(p):
+    rng = np.random.default_rng(5)
+    returns = rng.normal(0.0006, 0.01, 1500)
+    book = TrialBook(p)
+    for i in range(10):
+        book._upsert(f"cat_{i}", "{}", "catalogue", rng.normal(0, 0.02), None)
+    before = project_deflated_sharpe(returns, book)
+    for i in range(50):  # Wild in-sample figures from near-empty grid variants.
+        book._upsert("trend", f"v{i}", "engine_grid", rng.choice([-0.4, 0.15]), None)
+    after = project_deflated_sharpe(returns, book)
+    book.close()
+    assert after["trials"] == 60 and before["trials"] == 10
+    assert after["expected_max_sr"] > before["expected_max_sr"]  # More trials: a higher bar...
+    assert after["expected_max_sr"] < 0.1  # ...but not one set by the engines' training noise (that would be ~0.6).
+
+
+def test_rescore_judges_against_the_current_trial_count(p, monkeypatch):
+    name = next(iter(CATALOGUE))
+    folder = p.research / "reports"
+    folder.mkdir(parents=True)
+    report = {**base_report(), "strategy": name, "catalogue_verdict": {"label": "weak_or_not_significant"}}
+    (folder / f"{name}_latest.json").write_text(json.dumps(report), encoding="utf-8")
+    (p.research / "catalogue_returns").mkdir()
+    np.save(p.research / "catalogue_returns" / f"{name}.npy", np.random.default_rng(1).normal(0.003, 0.01, 2000))
+    book = TrialBook(p)
+    for i in range(6):
+        book._upsert(f"cat_{i}", "{}", "catalogue", 0.001 * i, None)
+    book.con.commit()
+    book.close()
+    out = runner.rescore(p)
+    saved = json.loads((folder / f"{name}_latest.json").read_text(encoding="utf-8"))
+    assert out[name]["previous_label"] == "weak_or_not_significant" and saved["project_multiple_testing"]["trials"] == 6
+    assert saved["catalogue_verdict"]["label"] == "promising_needs_paper_trading"  # A strong synthetic series clears the bar.

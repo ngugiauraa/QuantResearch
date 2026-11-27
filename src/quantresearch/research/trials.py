@@ -110,13 +110,22 @@ def _grid_labels(grid: dict) -> list[str]:
     return [variant_key(dict(zip(keys, combo))) for combo in itertools.product(*[grid[k] for k in keys])]
 
 
+MIN_COMPARABLE = 5
+
+
 def project_deflated_sharpe(daily_returns: np.ndarray, book: TrialBook) -> dict:
     """Deflated Sharpe of these returns against every variant in the book (Bailey and Lopez de Prado).
 
-    N is the number of variants ever tried, including ones that never traded. The spread of trial Sharpes comes from
-    the variants that have one. With fewer than two scored variants it falls back to the plain probabilistic Sharpe.
+    N is the number of variants ever tried, engines and catalogue, including ones that never traded. The spread of
+    trial Sharpes, which sets how high the best-by-luck Sharpe would be, comes from out-of-sample Sharpes measured
+    under the identical protocol (the catalogue's). The engines' per-variant figures are in-sample training Sharpes,
+    including near-empty variants (from -6.5 to +2.2 a year); mixing them in inflated the bar to an unreachable
+    ~4.2 annualised Sharpe, so they count towards N but not towards the spread. With fewer than MIN_COMPARABLE
+    catalogue Sharpes, every scored variant is used.
     """
-    n, known = book.sharpes()
+    n, _ = book.sharpes()
+    comparable = [r[0] for r in book.con.execute("SELECT sharpe_daily FROM trials WHERE kind='catalogue' AND sharpe_daily IS NOT NULL")]
+    known = comparable if len(comparable) >= MIN_COMPARABLE else book.sharpes()[1]
     trials = np.asarray([s for s in known if np.isfinite(s)], dtype="float64")
     if n < 2 or len(trials) < 2 or trials.std(ddof=1) == 0:
         return {"trials": n, "scored": int(len(trials)), "expected_max_sr": 0.0, "dsr": stats.probabilistic_sharpe(daily_returns, 0.0)}
