@@ -157,6 +157,7 @@ def walk_forward(defn: StrategyDef, features: pd.DataFrame, costs: CostModel, tr
         "parameter_sensitivity": {k: {"mean_train_sharpe": float(np.mean(v)), "min": float(np.min(v)), "max": float(np.max(v))}
                                   for k, v in sensitivity.items()},
         "last_params": next((r["params"] for r in reversed(records) if "params" in r), None),
+        "_daily_returns": daily,  # Private: for project-wide deflation (research/trials.py). Never saved.
     }
 
 
@@ -193,6 +194,7 @@ def full_report(defn: StrategyDef, features: pd.DataFrame, costs: CostModel | No
                 dataset: str | None = None) -> dict:
     costs = costs or CostModel()
     wf = walk_forward(defn, features, costs, train_years, test_months, holdout_years, execution=execution)
+    oos_daily = wf.pop("_daily_returns")
     holdout_start = pd.Timestamp(wf["holdout_start"], tz="UTC")
     params = wf["last_params"] or defn.defaults
     params = {**defn.defaults, **params}
@@ -227,6 +229,7 @@ def full_report(defn: StrategyDef, features: pd.DataFrame, costs: CostModel | No
         "holdout": {"params": {k: params[k] for k in defn.grid}, "scenarios": by_scenario,
                     "report": metrics.report(base.trades_frame(), base.equity_curve(), 100_000.0, regime_labels(features))},
         "verdict": verdict(wf, by_scenario),
+        "_oos_daily": oos_daily,
     }
 
 
@@ -265,6 +268,7 @@ class Ledger:
         )
 
     def add(self, report: dict) -> Path:
+        report = {k: v for k, v in report.items() if not k.startswith("_")}  # Private working values are never saved.
         folder = self.p.research / "reports"
         folder.mkdir(parents=True, exist_ok=True)
         stamp = report["created_at"].replace(":", "").replace("-", "")[:15]

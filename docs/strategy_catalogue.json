@@ -1,0 +1,459 @@
+{
+ "note": "Every catalogue strategy ever defined. Never remove entries.",
+ "strategies": [
+  {
+   "name": "cat_turtle_s1_d1",
+   "title": "Turtle System 1 (20/10-day Donchian)",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "d1",
+   "source": "Curtis Faith, 'Way of the Turtle' (2007)",
+   "logic": "Buy when gold makes a new 20-day high and sell when it makes a new 20-day low; get out on a 10-day break the other way.",
+   "entry": "Long when the daily close is above the highest high of the prior 20 days; short when below the lowest low of the prior 20 days.",
+   "exit": "Exit long when the close is below the prior 10-day low; exit short when above the prior 10-day high; an opposite entry also reverses.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe from the entry close.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "entry_n": 20,
+    "exit_n": 10,
+    "stop_atr": 2.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_turtle_s2_d1",
+   "title": "Turtle System 2 (55/20-day Donchian)",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "d1",
+   "source": "Curtis Faith, 'Way of the Turtle' (2007)",
+   "logic": "Buy a new 55-day high and sell a new 55-day low; exit on a 20-day break the other way.",
+   "entry": "Long when the daily close is above the prior 55-day high; short when below the prior 55-day low.",
+   "exit": "Exit long below the prior 20-day low; exit short above the prior 20-day high; an opposite entry reverses.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "entry_n": 55,
+    "exit_n": 20,
+    "stop_atr": 2.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_donchian20_h4",
+   "title": "Donchian 20/10 on H4",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h4",
+   "source": "Richard Donchian's channel rule, as popularised by the Turtles; H4 application is common in retail gold systems",
+   "logic": "The 20/10 channel breakout, faster, on four-hour bars.",
+   "entry": "Long when the H4 close is above the prior 20-bar high; short when below the prior 20-bar low.",
+   "exit": "Exit long below the prior 10-bar low; exit short above the prior 10-bar high; opposite entry reverses.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "entry_n": 20,
+    "exit_n": 10,
+    "stop_atr": 2.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_golden_cross_d1",
+   "title": "Golden/death cross (50/200-day SMA)",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "d1",
+   "source": "Classic chart rule; e.g. Brock, Lakonishok and LeBaron, Journal of Finance 47(5), 1992",
+   "logic": "Hold gold long after the 50-day average crosses above the 200-day, and short after it crosses below.",
+   "entry": "Long on the day the 50-day SMA crosses above the 200-day SMA; short on the day it crosses below.",
+   "exit": "The opposite cross reverses the position; no other exit.",
+   "stop": "4 x the project's Wilder ATR(14) on the signal timeframe, a catastrophic stop only (the classic rule has none); after a stop-out it waits for the next cross.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "kind": "sma",
+    "fast": 50,
+    "slow": 200,
+    "stop_atr": 4.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_ema_cross_h1",
+   "title": "EMA 20/50 cross on H1",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h1",
+   "source": "Common retail moving-average crossover system",
+   "logic": "Follow the hourly 20/50 EMA cross.",
+   "entry": "Long when EMA(20) crosses above EMA(50); short when it crosses below.",
+   "exit": "Opposite cross reverses.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "kind": "ema",
+    "fast": 20,
+    "slow": 50,
+    "stop_atr": 3.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_faber_10m_mn1",
+   "title": "Faber 10-month SMA timing",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "mn1",
+   "source": "Mebane Faber, 'A Quantitative Approach to Tactical Asset Allocation' (2007), https://papers.ssrn.com/sol3/papers.cfm?abstract_id=962461",
+   "logic": "Own gold only while its monthly close is above the 10-month moving average.",
+   "entry": "Long at any monthly close above the 10-month SMA of monthly closes (so it re-enters the month after a stop-out if still above).",
+   "exit": "Exit when a monthly close is below the 10-month SMA. Long only.",
+   "stop": "4 x the monthly ATR(14), catastrophic only.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "months": 10,
+    "stop_atr": 4.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_tsmom_12m_d1",
+   "title": "Time-series momentum (12-month, monthly rebalance)",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "d1",
+   "source": "Moskowitz, Ooi and Pedersen, 'Time Series Momentum', Journal of Financial Economics 104(2), 2012, https://doi.org/10.1016/j.jfineco.2011.11.003",
+   "logic": "Be long gold if it is up over the past year and short if it is down, checking once a month.",
+   "entry": "On the first trading day of each month: long if close / close 252 days ago - 1 > 0, short if < 0.",
+   "exit": "Reverses on a later monthly check with the opposite sign; otherwise holds.",
+   "stop": "4 x the project's Wilder ATR(14) on the signal timeframe, catastrophic; re-entry only at the next monthly check.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "lookback": 252,
+    "stop_atr": 4.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_keltner_breakout_h1",
+   "title": "Keltner channel breakout (EMA20 +/- 2 ATR)",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h1",
+   "source": "Chester Keltner (1960); ATR form popularised by Linda Bradford Raschke",
+   "logic": "A close outside the ATR channel starts a trend trade that lasts until price returns to the average.",
+   "entry": "Long when the close crosses above EMA(20) + 2 x ATR(14); short when it crosses below EMA(20) - 2 x ATR(14).",
+   "exit": "Exit long when the close is below EMA(20); exit short when above EMA(20).",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "n": 20,
+    "k": 2.0,
+    "stop_atr": 2.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_bollinger_breakout_h4",
+   "title": "Bollinger band breakout on H4",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h4",
+   "source": "John Bollinger, 'Bollinger on Bollinger Bands' (2001)",
+   "logic": "A close outside the bands is treated as the start of a move.",
+   "entry": "Long when the H4 close crosses above the upper band (SMA20 + 2 SD); short when it crosses below the lower band.",
+   "exit": "Exit long when the close is below the 20-bar SMA; exit short when above it.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "stop_atr": 2.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_di_cross_h1",
+   "title": "Wilder DI cross with ADX > 25",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h1",
+   "source": "J. Welles Wilder, 'New Concepts in Technical Trading Systems' (1978)",
+   "logic": "When +DI crosses above -DI in a trending market, buy; the reverse, sell.",
+   "entry": "Long when +DI(14) crosses above -DI(14) and ADX(14) > 25; short when -DI crosses above +DI and ADX > 25.",
+   "exit": "Exit on the opposite DI cross (regardless of ADX).",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "adx_min": 25.0,
+    "stop_atr": 2.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_supertrend_h1",
+   "title": "Supertrend (10, 3)",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h1",
+   "source": "Olivier Seban's Supertrend indicator; standard definition as in most charting packages",
+   "logic": "Follow the Supertrend's direction, reversing when it flips.",
+   "entry": "Long on the bar the Supertrend (ATR 10, multiplier 3, on (high+low)/2) flips up; short when it flips down.",
+   "exit": "The opposite flip reverses.",
+   "stop": "Distance from the entry close to the Supertrend line, at least 0.5 x ATR(14).",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "n": 10,
+    "mult": 3.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_macd_zero_h4",
+   "title": "MACD signal cross with zero-line filter",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h4",
+   "source": "Gerald Appel, 'Technical Analysis: Power Tools for Active Investors' (2005)",
+   "logic": "Buy MACD bullish crosses only when MACD is above zero, and sell bearish crosses only below zero.",
+   "entry": "Long when MACD(12,26) crosses above its 9-EMA signal while MACD > 0; short when it crosses below while MACD < 0.",
+   "exit": "Exit long on any bearish signal cross; exit short on any bullish cross.",
+   "stop": "2.5 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "fast": 12,
+    "slow": 26,
+    "signal": 9,
+    "stop_atr": 2.5
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_ichimoku_h4",
+   "title": "Ichimoku cloud break with TK alignment",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h4",
+   "source": "Goichi Hosoda's Ichimoku Kinko Hyo; standard 9/26/52 settings",
+   "logic": "Price above the cloud with the fast line above the slow line is an uptrend; the reverse a downtrend.",
+   "entry": "Long on the first bar where the close is above both cloud spans (each shifted 26 bars) and Tenkan(9) > Kijun(26); short mirrored.",
+   "exit": "Exit long when the close is below Kijun; exit short when above.",
+   "stop": "2.5 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "stop_atr": 2.5
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_52w_high_d1",
+   "title": "52-week closing-high breakout",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "d1",
+   "source": "Adapted from George and Hwang, 'The 52-Week High and Momentum Investing', Journal of Finance 59(5), 2004 (stocks)",
+   "logic": "New yearly highs tend to keep going, so buy them and hold until the trend weakens.",
+   "entry": "Long when the daily close crosses above the highest close of the prior 252 days. Long only.",
+   "exit": "Exit when the close is below the 50-day SMA.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "lookback": 252,
+    "exit_sma": 50,
+    "stop_atr": 3.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_nr7_d1",
+   "title": "NR7 breakout",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "d1",
+   "source": "Toby Crabel, 'Day Trading with Short Term Price Patterns and Opening Range Breakout' (1990)",
+   "logic": "Very narrow days come before expansion; trade the direction of the break.",
+   "entry": "If yesterday's high-low range was the smallest of the last 7 days: long when today's close is above yesterday's high, short when below yesterday's low.",
+   "exit": "Exit after 5 days.",
+   "stop": "The far side of the NR7 day's range (its low for a long, its high for a short).",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "n": 7,
+    "hold": 5
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_inside_bar_h4",
+   "title": "Inside-bar breakout on H4",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h4",
+   "source": "Common price-action pattern, e.g. Al Brooks, 'Trading Price Action Trends' (2011)",
+   "logic": "A bar inside the previous bar is a pause; the break of the bigger bar shows direction.",
+   "entry": "If the previous bar was inside the bar before it: long when the close is above the mother bar's high, short when below its low.",
+   "exit": "Target 1 x the mother bar's range from entry; otherwise exit after 12 bars.",
+   "stop": "The mother bar's opposite extreme.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "target_range": 1.0,
+    "hold": 12
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_dual_thrust_h1",
+   "title": "Dual Thrust (4-day range, k = 0.5)",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h1",
+   "source": "Michael Chalek's Dual Thrust system, widely published in futures-system literature",
+   "logic": "Buy when price moves half a recent range above the day's open, sell the mirror, and close everything late in the day.",
+   "entry": "Range = max(HH - LC, HC - LL) over the prior 4 COMEX days. Long on the first H1 close above day open + 0.5 x Range; short on the first close below open - 0.5 x Range; no new entries from 15:00 New York.",
+   "exit": "Flat at the first bar from 16:00 New York; an opposite entry reverses.",
+   "stop": "0.5 x Range (back to the day's open).",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "days": 4,
+    "k": 0.5,
+    "last_entry_ny": 15,
+    "flat_ny": 16
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_chandelier_h4",
+   "title": "20-bar breakout with chandelier exit",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h4",
+   "source": "Chuck LeBeau's chandelier exit, as described in Alexander Elder, 'Come into My Trading Room' (2002)",
+   "logic": "Enter breakouts and let a trailing stop hung from the recent high decide the exit.",
+   "entry": "Long when the H4 close is above the prior 20-bar high; short when below the prior 20-bar low.",
+   "exit": "Exit long when the close is below the highest high of the last 22 bars - 3 x ATR(14); short mirrored.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "entry_n": 20,
+    "trail_n": 22,
+    "trail_atr": 3.0,
+    "stop_atr": 3.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_ema_pullback_h1",
+   "title": "Pullback to EMA20 in an aligned trend",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h1",
+   "source": "Common trend-pullback rule; own exact parameters",
+   "logic": "In a clean uptrend, a touch of the 20-EMA that closes back above it is a chance to join the trend.",
+   "entry": "Long when EMA20 > EMA50 > SMA200, the bar's low touches EMA20, and the bar closes above EMA20 and above its open; short mirrored.",
+   "exit": "Target 3 x ATR(14); otherwise exit after 48 bars.",
+   "stop": "1.5 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "stop_atr": 1.5,
+    "target_atr": 3.0,
+    "hold": 48
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_weekly_breakout_h4",
+   "title": "Prior-week high/low breakout",
+   "family": "trend_breakout",
+   "batch": 1,
+   "timeframe": "h4",
+   "source": "Own idea, a weekly variant of the channel breakout",
+   "logic": "Breaking last week's range shows a new weekly trend.",
+   "entry": "Long on the first H4 close of the week above the previous calendar week's (UTC) high; short on the first close below its low.",
+   "exit": "Exit after 30 H4 bars (about a week); an opposite entry reverses.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "stop_atr": 2.0,
+    "hold": 30
+   },
+   "needs": [],
+   "macro": []
+  }
+ ]
+}

@@ -41,6 +41,11 @@ NEWS_DEADLINE_S = 20  # Well inside the 100 s Cloudflare tunnel limit.
 NEWS_COOLDOWN_S = 60  # After GDELT says 429, asking again sooner only extends the block.
 
 
+class CatalogueQueue(BaseModel):
+    names: list[str] = []
+    all_unrun: bool = False
+
+
 class OrderBody(BaseModel):
     side: int = Field(ge=-1, le=1)
     lots: float = Field(gt=0)
@@ -377,6 +382,72 @@ def create_app(services: Services | None = None) -> FastAPI:
             return report["verdict"]
 
         return {"job": svc.start_job(f"research:{name}", work)}
+
+    # ------------------------------------------------------------ strategy catalogue
+    @app.get("/api/catalogue")
+    def catalogue_list():
+        from quantresearch.research import catalogue as cat_runner
+        from quantresearch.research.trials import TrialBook
+        from quantresearch.strategies import catalogue as cat
+
+        reports, queue = cat_runner.latest_reports(svc.p), cat_runner.queue_state(svc.p)
+        book = TrialBook(svc.p)
+        try:
+            trials = book.summary()
+        finally:
+            book.close()
+        return ok({"strategies": [{**e.as_dict(), "report": reports.get(e.name), "queue": queue.get(e.name)} for e in cat.ENTRIES],
+                   "trials": trials, "worker": {"current": svc.catalogue_worker["current"], "started": svc.catalogue_worker["started"]}})
+
+    @app.get("/api/catalogue/report/{name}")
+    def catalogue_report(name: str):
+        from quantresearch.strategies import catalogue as cat
+
+        path = svc.p.research / "reports" / f"{name}_latest.json"
+        if name not in cat.CATALOGUE or not path.exists():
+            raise HTTPException(404, f"No report for {name} yet")
+        return ok(json.loads(path.read_text(encoding="utf-8")))
+
+    @app.post("/api/catalogue/run/{name}")
+    def catalogue_run(name: str):
+        from quantresearch.research import catalogue as cat_runner
+
+        try:
+            cat_runner.enqueue([name], svc.p, now=True)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc))
+        svc.catalogue_kick()
+        return ok({"queued": [name], "status": "pending"})
+
+    @app.post("/api/catalogue/queue")
+    def catalogue_queue(body: CatalogueQueue):
+        from quantresearch.research import catalogue as cat_runner
+        from quantresearch.strategies import catalogue as cat
+
+        names = list(body.names)
+        if body.all_unrun:
+            done, queue = cat_runner.latest_reports(svc.p), cat_runner.queue_state(svc.p)
+            names += [n for n in cat.CATALOGUE if n not in done and n not in queue]
+        try:
+            cat_runner.enqueue(names, svc.p)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc))
+        return ok({"queued": names})
+
+    @app.post("/api/catalogue/dequeue")
+    def catalogue_dequeue(body: CatalogueQueue):
+        from quantresearch.research import catalogue as cat_runner
+
+        cat_runner.dequeue(body.names, svc.p)
+        return ok({"removed": body.names})
+
+    @app.post("/api/catalogue/run-queued")
+    def catalogue_run_queued():
+        from quantresearch.research import catalogue as cat_runner
+
+        started = cat_runner.start_batch(svc.p)
+        svc.catalogue_kick()
+        return ok({"started": started})
 
     @app.get("/api/research/experiments")
     def experiments():

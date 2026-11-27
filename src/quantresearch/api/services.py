@@ -59,6 +59,38 @@ class Services:
         self.sync_status: dict = {"enabled": False}
         if self.live.enabled and os.environ.get("QR_WAREHOUSE_SYNC", "1") != "0":
             threading.Thread(target=self._daily_sync, name="warehouse-sync", daemon=True).start()
+        self.catalogue_worker: dict = {"current": None, "started": False}
+        self._catalogue_wake = threading.Event()
+
+    def catalogue_kick(self) -> None:
+        """Start the catalogue worker on first use, and wake it when work is queued."""
+        with self.lock:
+            if not self.catalogue_worker["started"]:
+                from quantresearch.research import catalogue as cat_runner
+
+                cat_runner.recover(self.p)  # A run cut off by a restart goes again.
+                self.catalogue_worker["started"] = True
+                threading.Thread(target=self._catalogue_loop, name="catalogue-worker", daemon=True).start()
+        self._catalogue_wake.set()
+
+    def _catalogue_loop(self) -> None:
+        """Runs pending catalogue strategies one at a time, each in a child process so the API stays responsive."""
+        from quantresearch.research import catalogue as cat_runner
+
+        while True:
+            name = cat_runner.claim_next(self.p)
+            if name is None:
+                self._catalogue_wake.wait(timeout=60)
+                self._catalogue_wake.clear()
+                continue
+            self.catalogue_worker["current"] = name
+            try:
+                error = cat_runner.run_subprocess(name, self.p)
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+            cat_runner.finish(name, error, self.p)
+            self.audit.write("catalogue_run", {"strategy": name, "error": error})
+            self.catalogue_worker["current"] = None
 
     def _daily_sync(self, check_every_s: float = 900.0) -> None:
         """Once per UTC day while the API runs: Dukascopy for the current month, then MT5 bars for any gap.
