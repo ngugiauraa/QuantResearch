@@ -10,8 +10,14 @@ export interface Marker { time: number; position: "aboveBar" | "belowBar"; color
 const theme = { layout: { background: { type: ColorType.Solid, color: "#111118" }, textColor: "#64748b" }, grid: { vertLines: { color: "#1a1a28" }, horzLines: { color: "#1a1a28" } } };
 
 /** Candlesticks with overlays, levels and markers. onClick supports the drawing tools on the Charts page. */
-export function PriceChart({ candles, lines = [], levels = [], markers = [], onPick, height, follow = false }: {
+/**
+ * `live` is the forming (last) candle. It is drawn with series.update(), which replaces the last bar in place or
+ * appends a new one, without resetting the other bars, the overlays or the user's zoom. Closed bars come only
+ * from `candles`.
+ */
+export function PriceChart({ candles, lines = [], levels = [], markers = [], onPick, height, follow = false, live = null }: {
   candles: Candle[]; lines?: Line[]; levels?: Level[]; markers?: Marker[]; onPick?: (time: number, price: number) => void; height?: number; follow?: boolean;
+  live?: Candle | null;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -54,6 +60,13 @@ export function PriceChart({ candles, lines = [], levels = [], markers = [], onP
     priceLines.current = levels.map((l) => main.current!.createPriceLine({ price: l.price, color: l.color, lineWidth: 1, lineStyle: l.dashed === false ? 0 : 2, axisLabelVisible: true, title: l.title }));
     if (follow) chart.current.timeScale().scrollToRealTime();
   }, [candles, lines, levels, markers, follow]);
+
+  useEffect(() => {
+    if (!main.current || !live || !candles.length) return;
+    // update() refuses a bar older than the last one; a stale forming bar is simply skipped.
+    if (live.time < candles[candles.length - 1].time) return;
+    main.current.update({ ...live, time: live.time as UTCTimestamp });
+  }, [live, candles]);
 
   return <div ref={box} className="chart" style={height ? { height } : undefined} data-testid="chart" />;
 }

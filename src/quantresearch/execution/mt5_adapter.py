@@ -174,6 +174,19 @@ class Mt5Broker:
                  "low": float(r["low"]), "close": float(r["close"]), "tick_volume": float(r["tick_volume"]), "spread": float(r["spread"]) * point}
                 for r in rows]
 
+    def forming_m1(self) -> dict | None:
+        """The current, still-forming M1 bar of the traded symbol (bid prices), read-only. None if there is none."""
+        import os
+
+        self.ensure_connected()
+        rows = self.mt5.copy_rates_from_pos(self.symbol_name, self.mt5.TIMEFRAME_M1, 0, 1)
+        if rows is None or len(rows) == 0:
+            return None
+        r = rows[-1]
+        offset = timedelta(hours=float(os.environ.get("QR_MT5_UTC_OFFSET_HOURS", "0")))
+        return {"ts": datetime.fromtimestamp(int(r["time"]), timezone.utc) - offset, "open": float(r["open"]), "high": float(r["high"]),
+                "low": float(r["low"]), "close": float(r["close"])}
+
     def spread(self) -> float:
         q = self.quote()
         return q.ask - q.bid

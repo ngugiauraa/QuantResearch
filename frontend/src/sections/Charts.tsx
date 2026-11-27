@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { fmt, useFetch, when } from "@/lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, fmt, useFetch, when } from "@/lib/api";
 import { Card, EmptyState, ErrorBox, Notice, Skeleton } from "@/components/ui";
 import { adx, bbWidthPercentile, ema } from "@/lib/indicators";
-import { PriceChart, type Level, type Line, type Marker } from "@/components/PriceChart";
+import { PriceChart, type Candle, type Level, type Line, type Marker } from "@/components/PriceChart";
+import { mergeForming } from "@/lib/forming";
 
 const TFS = ["m1", "m5", "m15", "m30", "h1", "h4", "d1", "mn1"];
 const OVERLAYS: Record<string, string> = { sma_20: "#f59e0b", sma_50: "#7c3aed", sma_200: "#a78bfa", ema_20: "#58c7c7", bb_upper: "#6b7a87", bb_lower: "#6b7a87" };
@@ -28,7 +29,11 @@ export function Charts() {
   const [tool, setTool] = useState<"none" | "level" | "trend">("none");
   const [pending, setPending] = useState<{ time: number; price: number } | null>(null);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
-  const { data, error, loading } = useFetch(`/api/bars?tf=${tf}&limit=${limit}`);
+  const [feedLive, setFeedLive] = useState(false);
+  // Closed bars: refreshed every minute while a live feed is attached (and right after each new minute, below).
+  const { data, error, loading, reload } = useFetch(`/api/bars?tf=${tf}&limit=${limit}`, feedLive ? 60000 : undefined);
+  useEffect(() => setFeedLive(Boolean(data?.feed?.live)), [data]);
+  const forming = useFormingBar(feedLive, reload);
   const overview = useFetch("/api/overview", 30000);
 
   useEffect(() => setDrawings(loadDrawings()), []);
@@ -43,6 +48,7 @@ export function Charts() {
 
   const bars: any[] = useMemo(() => data?.bars ?? [], [data]);
   const candles = useMemo(() => bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })), [bars]);
+  const live = useMemo(() => mergeForming(candles, forming, tf), [candles, forming, tf]);
   const last = bars[bars.length - 1];
   const panel = useMemo(() => {
     if (!bars.length) return null;
@@ -126,7 +132,7 @@ export function Charts() {
       <div className="row">
         <div className="flex gap-1 rounded-full border border-line bg-surface2 p-1" role="group" aria-label="Timeframe">{TFS.map((t) => <button key={t} className={`rounded-full px-3 py-0.5 text-xs font-semibold transition-colors duration-150 ${t === tf ? "bg-brand text-white shadow-glow" : "text-mute hover:text-ink"}`} onClick={() => setTf(t)}>{t.toUpperCase()}</button>)}</div><span className="rounded-full border border-line bg-surface px-3 py-0.5 text-xs font-semibold">XAUUSD</span>
         <label>Bars <select value={limit} onChange={(e) => setLimit(+e.target.value)}>{[200, 500, 1000, 2000, 5000].map((n) => <option key={n}>{n}</option>)}</select></label>
-        {last && <span className="muted">Close {fmt(last.close)}, spread {fmt(last.spread)}, RSI {fmt(last.rsi_14, 1)}, ATR {fmt(last.atr_14)}. Mid prices.</span>}
+        {last && <span className="muted">{live ? <>Live {fmt(live.close)} (forming), last closed {fmt(last.close)}</> : <>Close {fmt(last.close)}</>}, spread {fmt(last.spread)}, RSI {fmt(last.rsi_14, 1)}, ATR {fmt(last.atr_14)}. Mid prices.</span>}
       </div>
       <div className="row">
         {Object.keys(OVERLAYS).map((k) => <label className="check" key={k}><input type="checkbox" checked={overlays.includes(k)} onChange={() => toggle(overlays, setOverlays, k)} />{k}</label>)}
@@ -142,7 +148,7 @@ export function Charts() {
       </div>
       <div className="grid-chart">
         <div className="min-w-0">
-          {loading && !bars.length ? <Skeleton className="h-[560px]" /> : !bars.length ? <EmptyState className="h-[560px]" text="No bars for this timeframe. Build the warehouse first." /> : <Card><PriceChart candles={candles} lines={lines} levels={levels} markers={markers} onPick={onPick} height={560} /></Card>}
+          {loading && !bars.length ? <Skeleton className="h-[560px]" /> : !bars.length ? <EmptyState className="h-[560px]" text="No bars for this timeframe. Build the warehouse first." /> : <Card><PriceChart candles={candles} lines={lines} levels={levels} markers={markers} onPick={onPick} height={560} live={live} /></Card>}
         </div>
         <Card title="Current bar">
           {!last ? <Skeleton className="h-48" /> : (
@@ -172,4 +178,48 @@ function FeedBanner({ feed }: { feed?: any }) {
   if (feed.state === "waiting")
     return <Notice>{`${String(feed.source).toUpperCase()} is attached; it has no closed bars newer than the stored history (${when(feed.warehouse_end)}) yet, for example while the market is closed.` + rules}</Notice>;
   return <Notice>{`History only: ${feed.reason ?? "no live feed is connected to this chart"}.` + rules}</Notice>;
+}
+
+const FORMING_POLL_MS = 1500;
+
+/** Polls the forming minute every 1.5 s while live; asks for closed bars again shortly after each minute closes. */
+function useFormingBar(enabled: boolean, reloadClosed: () => void): Candle | null {
+  const [bar, setBar] = useState<Candle | null>(null);
+  const busy = useRef(false);
+  const minute = useRef<number | null>(null);
+  const reload = useRef(reloadClosed);
+  reload.current = reloadClosed;
+  useEffect(() => {
+    if (!enabled) {
+      setBar(null);
+      return;
+    }
+    let alive = true;
+    const tick = async () => {
+      if (busy.current) return;
+      busy.current = true;
+      try {
+        const r = await api<any>("/api/bars/forming", { timeoutMs: 8000 });
+        if (!alive) return;
+        if (!r?.live || !r.bar) {
+          setBar(null);
+          return;
+        }
+        if (minute.current !== null && r.bar.time > minute.current) setTimeout(() => reload.current(), 2500); // A minute just closed.
+        minute.current = r.bar.time;
+        setBar({ time: r.bar.time, open: r.bar.open, high: r.bar.high, low: r.bar.low, close: r.bar.close });
+      } catch {
+        /* A missed poll is retried on the next tick; the closed bars stay as they are. */
+      } finally {
+        busy.current = false;
+      }
+    };
+    tick();
+    const id = setInterval(tick, FORMING_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [enabled]);
+  return bar;
 }

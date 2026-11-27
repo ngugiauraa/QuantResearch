@@ -200,6 +200,27 @@ def create_app(services: Services | None = None) -> FastAPI:
         return ok({"timeframe": tf, "feed": bar_feed(frame) if end is None else {"live": False, "state": "history", "reason": "a past end time was requested"},
                    "bars": out.drop(columns=["ts", "close_ts"]).assign(close_time=out["close_ts"].map(lambda t: int(t.timestamp()))).to_dict("records")})
 
+    @app.get("/api/bars/forming")
+    def forming_bar():
+        """The minute bar forming right now and the live quote, for the chart's last candle. Read-only, MT5 only.
+
+        Prices are mid, like the stored bars: the broker's bid bar plus half the current spread. The chart merges this
+        into its last candle between closed-bar refreshes; closed bars always come from /api/bars.
+        """
+        if not svc.live.enabled or svc.broker.is_simulated or not hasattr(svc.broker, "forming_m1"):
+            return ok({"live": False, "reason": f"no live broker is attached ({svc.broker.name})"})
+        try:
+            q = svc.broker.quote()
+            bar = svc.broker.forming_m1()
+        except BrokerError as exc:
+            return ok({"live": False, "reason": str(exc)})
+        if bar is None:
+            return ok({"live": False, "reason": "the broker has no forming bar (market closed?)"})
+        half = (q.ask - q.bid) / 2
+        mid = {k: bar[k] + half for k in ("open", "high", "low", "close")}
+        return ok({"live": True, "source": svc.broker.name, "quote": {"time": q.time, "bid": q.bid, "ask": q.ask},
+                   "bar": {"time": int(pd.Timestamp(bar["ts"]).timestamp()), **mid}})
+
     def bar_feed(frame: pd.DataFrame) -> dict:
         """What the chart is really showing: stored history only, or history extended by the broker's bars."""
         if not svc.live.enabled:
