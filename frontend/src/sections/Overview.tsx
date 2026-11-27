@@ -156,7 +156,7 @@ export function Overview() {
 
       <Card title={`Recent strategy signals · last 48 bars (${data?.active_strategies?.length ?? 0} engines)`}>
         {signals.length ? (
-          <div className="overflow-x-auto">
+          <div className="table-scroll">
             <table>
               <thead><tr><th>Time</th><th>Engine</th><th>Timeframe</th><th>Signal</th><th>Regime (now)</th></tr></thead>
               <tbody>

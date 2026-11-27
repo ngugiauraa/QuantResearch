@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Overview } from "@/sections/Overview";
 import { Charts } from "@/sections/Charts";
 import { Intelligence } from "@/sections/Intelligence";
@@ -22,7 +22,8 @@ const LABELS: Record<string, string> = Object.fromEntries(GROUPS.flatMap((g) => 
 export default function Home() {
   const [active, setActive] = useState("overview");
   const [collapsed, setCollapsed] = useState(false);
-  const { overview, health } = useShellData();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const { overview, health, terminal } = useShellData();
   useEffect(() => {
     const hash = window.location.hash.slice(1);
     if (hash in SECTIONS) setActive(hash);
@@ -30,8 +31,10 @@ export default function Home() {
   }, []);
   const open = (key: string) => {
     setActive(key);
+    setDrawerOpen(false);
     window.history.replaceState(null, "", `#${key}`);
   };
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const toggle = () => {
     setCollapsed((c) => {
       localStorage.setItem("qr-sidebar", c ? "0" : "1");
@@ -41,10 +44,10 @@ export default function Home() {
   const Section = SECTIONS[active];
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      <Sidebar active={active} onOpen={open} collapsed={collapsed} onToggle={toggle} health={health} />
+      <Sidebar active={active} onOpen={open} collapsed={collapsed} onToggle={toggle} health={health} drawerOpen={drawerOpen} onCloseDrawer={closeDrawer} />
       <div className="min-w-0 flex-1">
-        <TopBar title={LABELS[active]} overview={overview} health={health} />
-        <main className="px-4 pb-24 pt-5 md:px-6 md:pb-12"><Section /></main>
+        <TopBar title={LABELS[active]} overview={overview} terminal={terminal} health={health} onMenu={() => setDrawerOpen(true)} menuOpen={drawerOpen} />
+        <main className="px-4 pb-12 pt-5 md:px-6"><Section /></main>
       </div>
     </div>
   );

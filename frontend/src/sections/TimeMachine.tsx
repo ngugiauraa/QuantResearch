@@ -106,7 +106,7 @@ export function TimeMachine() {
       <h1>Time Machine</h1>
       <ErrorBox error={error ?? strategies.error} />
       <Card title="Experiment">
-        <div className="row">
+        <div className="row form-row">
           <label>Signals <select value={form.timeframe} onChange={(e) => setForm({ ...form, timeframe: e.target.value })}>{["s1", "m1", "m5", "m15", "m30", "h1", "h4", "d1"].map((t) => <option key={t}>{t}</option>)}</select></label>
           <label>Fills on <select value={form.execution} onChange={(e) => setForm({ ...form, execution: e.target.value })}><option value="tick">tick (where downloaded)</option><option value="m1">m1</option><option value="m5">m5</option><option value="">signal bars</option></select></label>
           <label>From <input type="date" value={form.start} onChange={(e) => setForm({ ...form, start: e.target.value })} /></label>
@@ -158,7 +158,7 @@ export function TimeMachine() {
         </>
       )}
       <Card title="Outcome Simulator (the original Time Machine's method)">
-        <div className="row">
+        <div className="row form-row">
           {(["entry", "stop", "target"] as const).map((k) => <label key={k}>{k} <input type="number" step="0.01" value={plan[k]} onChange={(e) => setPlan({ ...plan, [k]: e.target.value })} style={{ width: 100 }} /></label>)}
           <label>Entry time (UTC) <input placeholder="2024-03-01 14:00" value={plan.entry_time} onChange={(e) => setPlan({ ...plan, entry_time: e.target.value })} /></label>
           <button className="btn" onClick={simulate} disabled={!plan.entry || !plan.stop || !plan.target || !plan.entry_time}>Simulate</button>

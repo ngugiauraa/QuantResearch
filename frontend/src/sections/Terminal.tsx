@@ -59,7 +59,7 @@ export function Terminal() {
         <div className="muted">Research and simulation modes send nothing. Assisted needs a typed yes for each order. Real-money modes require the QR_LIVE_ENABLED switch plus an activation phrase, and never survive a restart. All routes pass through the risk engine.</div>
       </Card>
       <Card title="New order">
-        <div className="row">
+        <div className="row form-row">
           <div className="flex w-full gap-2" role="group" aria-label="Side">
             <button type="button" aria-pressed={form.side === 1} onClick={() => setForm({ ...form, side: 1 })} className={`flex-1 rounded-card border py-3 text-lg font-bold transition ${form.side === 1 ? "border-up bg-up text-black shadow-[0_0_20px_rgba(34,197,94,0.35)]" : "border-up/40 text-up hover:bg-up/10"}`}>Buy</button>
             <button type="button" aria-pressed={form.side === -1} onClick={() => setForm({ ...form, side: -1 })} className={`flex-1 rounded-card border py-3 text-lg font-bold transition ${form.side === -1 ? "border-down bg-down text-white shadow-[0_0_20px_rgba(239,68,68,0.35)]" : "border-down/40 text-down hover:bg-down/10"}`}>Sell</button>
@@ -79,7 +79,7 @@ export function Terminal() {
       {(data?.awaiting_approval ?? []).length > 0 && (
         <Card title="Waiting for your yes">
           {data.awaiting_approval.map((t: any) => (
-            <div key={t.fingerprint} className="row">
+            <div key={t.fingerprint} className="row form-row">
               <b>{t.ticket}</b>
               <input aria-label="Reply" placeholder='Type "yes" for this one order' value={reply} onChange={(e) => setReply(e.target.value)} />
               <button className="btn primary" onClick={() => act(async () => { setResult(await api("/api/terminal/approve", { method: "POST", body: { fingerprint: t.fingerprint, reply } })); setReply(""); })}>Reply</button>

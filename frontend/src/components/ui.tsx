@@ -68,7 +68,7 @@ export const Notice = ({ children }: { children: ReactNode }) => <div className=
 export function Table({ columns, rows, empty = "Nothing to show." }: { columns: string[]; rows: ReactNode[][]; empty?: string }) {
   if (!rows.length) return <div className="muted">{empty}</div>;
   return (
-    <div className="overflow-x-auto">
+    <div className="table-scroll">
       <table>
         <thead>
           <tr>{columns.map((c) => <th key={c}>{c}</th>)}</tr>

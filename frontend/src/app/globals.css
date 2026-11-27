@@ -66,10 +66,31 @@ code { background: #15152a; padding: 1px 6px; border-radius: 6px; }
   .chart { height: 340px; }
 }
 
+/* ---- Phones and tablets ---- */
+/* Wide tables scroll sideways inside their own box rather than squashing columns. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+@media (max-width: 767px) {
+  .table-scroll table { min-width: 640px; }
+  .table-scroll th { white-space: nowrap; }
+}
+/* Stat-card grids: one column on phones, two on tablets; desktop keeps auto-fit. */
+@media (max-width: 639px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+@media (min-width: 640px) and (max-width: 1023px) { .grid:not(.wide) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Forms stack vertically on phones; every tappable control is at least 44px tall. */
+@media (max-width: 639px) {
+  .form-row { flex-direction: column; align-items: stretch; }
+  .form-row > label:not(.check) { display: flex; flex-direction: column; gap: 4px; }
+  .form-row input:not([type=checkbox]), .form-row select { width: 100% !important; }
+  .form-row > button { width: 100%; }
+  button.btn, .form-row input:not([type=checkbox]), .form-row select { min-height: 44px; }
+  label.check { min-height: 44px; }
+}
+
 main h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0; }
-.grid-4 { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-4 { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
 .grid-3 { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
-@media (min-width: 768px) { .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 640px) { .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (min-width: 1024px) { .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .grid-3 .card, .grid-4 .card { margin-bottom: 0; }
 .grid-chart { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
