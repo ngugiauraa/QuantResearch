@@ -550,7 +550,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         entry = body.entry if body.entry is not None else (quote.ask if body.side > 0 else quote.bid)
         atr = body.atr
         if atr is None and has_bars("h1"):
-            atr = svc.feature_window("h1", 30, live=False)["atr_14"].iloc[-1]
+            atr = svc.feature_window("h1", 30, closed_only=True)["atr_14"].iloc[-1]
         request = OrderRequest(body.side, body.lots, entry, body.stop, body.target, body.source, None if atr is None or not np.isfinite(atr) else float(atr))
         result = svc.router.submit(request)
         return ok({"status": result.status, "message": result.message, "lots": result.lots, "fingerprint": result.fingerprint, "ticket": result.ticket, "reasons": result.risk_reasons})
