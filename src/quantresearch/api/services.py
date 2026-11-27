@@ -38,6 +38,8 @@ class Services:
         self.p = p or paths()
         self.p.app.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
+        self._cache: dict[str, tuple[float, object]] = {}
+        self._cache_gates: dict[str, threading.Lock] = {}
         self.limits_path = self.p.app / "risk_limits.json"
         self.audit = AuditLog(self.p.app / "audit.sqlite")
         self.risk = RiskEngine(self._load_limits(), RiskState(self.p.app / "risk.sqlite"), news_schedule=self._event_schedule,
@@ -109,6 +111,25 @@ class Services:
         events = ext.read_events(self.p)
         rows = events[events["series"] == "FOMC_DECISION"]
         return [t.to_pydatetime() for t in rows["event_ts"]]
+
+    # ------------------------------------------------------------ shared results
+    def cached(self, key: str, ttl: float, compute):
+        """`compute()` at most once per `ttl` seconds. Concurrent callers wait for the one computation in progress
+        instead of starting their own, so a slow result polled by many pages cannot pile up work on the server."""
+        import time
+
+        with self.lock:
+            hit = self._cache.get(key)
+            if hit and time.monotonic() - hit[0] < ttl:
+                return hit[1]
+            gate = self._cache_gates.setdefault(key, threading.Lock())
+        with gate:
+            hit = self._cache.get(key)
+            if hit and time.monotonic() - hit[0] < ttl:
+                return hit[1]
+            value = compute()
+            self._cache[key] = (time.monotonic(), value)
+            return value
 
     # ------------------------------------------------------------ market data
     def latest_bar(self, tf: str = "m1") -> dict | None:

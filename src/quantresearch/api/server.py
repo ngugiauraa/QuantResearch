@@ -142,19 +142,23 @@ def create_app(services: Services | None = None) -> FastAPI:
         return ok({"status": "ok", "started_at": svc.started_at, "bar_feed": svc.live.status(), "warehouse_sync": svc.sync_status, "warehouse_ready": has_bars("m1"), "broker": svc.broker.name, "broker_connected": broker_ok,
                    "mt5": health_snapshot(svc.broker), "live_active": svc.router.live_active, "audit_chain_intact": svc.audit.verify(), "external": external})
 
+    def current_regime():
+        frame = svc.feature_window("h1", 500, closed_only=True)
+        usable = frame.dropna(subset=lab.REGIME_INPUTS)
+        if len(usable) > 100:
+            # Fitted on earlier bars only, so the latest bar is not labelling itself.
+            regimes = lab.predict_regimes(lab.fit_regimes(usable.iloc[:-1]), usable.tail(1))
+            if len(regimes):
+                return regimes.iloc[-1].to_dict()
+        return None
+
     @app.get("/api/overview")
     def overview():
         quote = svc.refresh_paper_quote()
-        latest_regime = None
-        if has_bars("h1"):
-            frame = svc.feature_window("h1", 500, closed_only=True)
-            usable = frame.dropna(subset=lab.REGIME_INPUTS)
-            if len(usable) > 100:
-                # Fitted on earlier bars only, so the latest bar is not labelling itself.
-                regimes = lab.predict_regimes(lab.fit_regimes(usable.iloc[:-1]), usable.tail(1))
-                if len(regimes):
-                    latest_regime = regimes.iloc[-1].to_dict()
-        recent_signals = svc.recent_signals()
+        # Regime and signals use closed bars only, so they change at most once a minute. Computing them took seconds
+        # per call, and every open page polls this endpoint, so requests queued without limit. Share one result a minute.
+        latest_regime = svc.cached("overview_regime", 60, current_regime) if has_bars("h1") else None
+        recent_signals = svc.cached("recent_signals", 60, svc.recent_signals)
         now = pd.Timestamp.now(tz="UTC")
         account, error = None, None
         try:

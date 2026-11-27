@@ -10,10 +10,16 @@ export const API: string = (
 
 export class ApiError extends Error {}
 
-export async function api<T = any>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+const FETCH_TIMEOUT_MS = 45_000;
+
+export async function api<T = any>(path: string, init?: { method?: string; body?: unknown; timeoutMs?: number }): Promise<T> {
   let response: Response;
+  // A request the server never answers would otherwise leave the page loading forever.
+  const controller = init?.timeoutMs ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), init!.timeoutMs) : null;
   try {
     response = await fetch(API + path, {
+      signal: controller?.signal,
       method: init?.method ?? "GET",
       headers: init?.body !== undefined ? { "Content-Type": "application/json" } : undefined,
       body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
@@ -21,11 +27,16 @@ export async function api<T = any>(path: string, init?: { method?: string; body?
       credentials: API ? "include" : "same-origin",
     });
   } catch {
+    if (controller?.signal.aborted) {
+      throw new ApiError(`The API did not answer ${path.split("?")[0]} within ${Math.round(init!.timeoutMs! / 1000)} s. It may be busy; the page will retry.`);
+    }
     throw new ApiError(
       API
         ? "Could not reach the API. If your Cloudflare Access session has expired, open the API address once in this browser to sign in again, then reload."
         : "Could not reach the API. Is the server running?",
     );
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   const text = await response.text();
   let data: any = null;
@@ -46,11 +57,14 @@ export function useFetch<T = any>(path: string | null, refreshMs?: number) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const alive = useRef(true);
+  const busy = useRef(false);
 
-  const load = useCallback(async () => {
-    if (!path) return;
+  // A poll is skipped while the previous one is still running, so a slow endpoint cannot pile up requests.
+  const load = useCallback(async (force = false) => {
+    if (!path || (busy.current && !force)) return;
+    busy.current = true;
     try {
-      const result = await api<T>(path);
+      const result = await api<T>(path, { timeoutMs: FETCH_TIMEOUT_MS });
       if (alive.current) {
         setData(result);
         setError(null);
@@ -58,16 +72,18 @@ export function useFetch<T = any>(path: string | null, refreshMs?: number) {
     } catch (e) {
       if (alive.current) setError((e as Error).message);
     } finally {
+      busy.current = false;
       if (alive.current) setLoading(false);
     }
   }, [path]);
+  const reload = useCallback(() => load(true), [load]);
 
   useEffect(() => {
     alive.current = true;
     setLoading(true);
-    load();
+    load(true);
     if (refreshMs) {
-      const id = setInterval(load, refreshMs);
+      const id = setInterval(() => load(), refreshMs);
       return () => {
         alive.current = false;
         clearInterval(id);
@@ -78,7 +94,7 @@ export function useFetch<T = any>(path: string | null, refreshMs?: number) {
     };
   }, [load, refreshMs]);
 
-  return { data, error, loading, reload: load };
+  return { data, error, loading, reload };
 }
 
 export async function waitForJob(id: string, onUpdate?: (job: any) => void): Promise<any> {
