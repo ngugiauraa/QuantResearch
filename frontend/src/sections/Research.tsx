@@ -45,10 +45,11 @@ export function Research() {
       <ErrorBox error={runError ?? strategies.error} />
       <Card title="Eight strategy engines">
         {strategies.loading ? <Loading /> : (
-          <Table columns={["Strategy", "Timeframe", "Result", "OOS trades", "OOS Sharpe", "Deflated Sharpe", ""]} rows={(strategies.data?.strategies ?? []).map((s: any) => [
+          <Table columns={["Strategy", "Timeframe", "Result", "OOS trades", "OOS Sharpe", "Deflated Sharpe", "Beats buy-and-hold", ""]} rows={(strategies.data?.strategies ?? []).map((s: any) => [
             s.title, s.timeframe.toUpperCase(),
             s.verdict ? <Pill key="v" tone={verdictTone(s.verdict.label)}>{verdictText[s.verdict.label] ?? s.verdict.label}</Pill> : <span className="muted">Not run</span>,
             fmt(s.verdict?.oos_trades, 0), fmt(s.verdict?.oos_sharpe), fmt(s.verdict?.deflated_sharpe),
+            s.verdict ? (s.verdict.beats_buy_and_hold === undefined ? "not checked" : s.verdict.beats_buy_and_hold ? "yes" : "no") : "–",
             <button key="b" className={`btn ${selected === s.name ? "primary" : ""}`} onClick={() => setSelected(s.name)}>View</button>])} />
         )}
         <div className="muted" style={{ marginTop: 8 }}>A good result does not qualify a strategy for live trading. A negative result from a sound test is a valid outcome.</div>

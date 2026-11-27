@@ -64,9 +64,10 @@ def test_more_trials_raise_the_bar(p):
     assert many["trials"] == 300 and many["dsr"] < few
 
 
-def base_report(oos_net=100.0, oos_sharpe=0.5, trades=60, holdout=50.0, stress=10.0):
+def base_report(oos_net=100.0, oos_sharpe=0.5, trades=60, holdout=50.0, stress=10.0, beats=True):
     return {"walk_forward": {"out_of_sample": {"trades": trades, "net_profit": oos_net}, "oos_sharpe": oos_sharpe, "deflated_sharpe": {"dsr": 0.99}},
-            "holdout": {"scenarios": {"observed": {"net_profit": holdout}, "stress": {"net_profit": stress}}}}
+            "holdout": {"scenarios": {"observed": {"net_profit": holdout}, "stress": {"net_profit": stress}}},
+            "risk_matched_benchmark": {"beats_both": beats}}
 
 
 @pytest.mark.parametrize("change, label", [
@@ -75,6 +76,7 @@ def base_report(oos_net=100.0, oos_sharpe=0.5, trades=60, holdout=50.0, stress=1
     ({"stress": -1.0}, "weak_or_not_significant"),
     ({"holdout": -1.0}, "weak_or_not_significant"),
     ({"oos_net": -5.0}, "no_edge_found"),
+    ({"beats": False}, "weak_or_not_significant"),
 ])
 def test_promising_needs_every_condition(change, label):
     v = runner.catalogue_verdict(base_report(**change), {"dsr": 0.97, "trials": 400, "expected_max_sr": 0.05})
@@ -154,3 +156,35 @@ def test_rescore_judges_against_the_current_trial_count(p, monkeypatch):
     saved = json.loads((folder / f"{name}_latest.json").read_text(encoding="utf-8"))
     assert out[name]["previous_label"] == "weak_or_not_significant" and saved["project_multiple_testing"]["trials"] == 6
     assert saved["catalogue_verdict"]["label"] == "promising_needs_paper_trading"  # A strong synthetic series clears the bar.
+
+
+def test_a_report_without_the_benchmark_is_never_promising():
+    report = base_report()
+    report.pop("risk_matched_benchmark")
+    v = runner.catalogue_verdict(report, {"dsr": 0.99, "trials": 10, "expected_max_sr": 0.01})
+    assert v["promising"] is False and v["checks"]["beats_buy_and_hold"] is False
+
+
+def test_risk_matched_buy_and_hold_compares_sharpe_over_the_same_days():
+    import pandas as pd
+
+    rng = np.random.default_rng(2)
+    ts = pd.date_range("2020-01-01", periods=600, freq="D", tz="UTC")
+    gold = pd.Series(np.exp(np.cumsum(rng.normal(0.001, 0.01, 600))) * 1000)
+    features = pd.DataFrame({"ts": ts, "close": gold})
+    gold_ret = gold.pct_change().dropna().to_numpy()
+    half_gold = pd.Series(0.5 * gold_ret, index=ts[1:])  # Same Sharpe as gold, half the risk: does not beat it.
+    better = pd.Series(0.5 * gold_ret + 0.002, index=ts[1:])
+    tie = ex.risk_matched_buy_and_hold(features, half_gold)
+    win = ex.risk_matched_buy_and_hold(features, better)
+    assert tie["available"] and tie["beats"] is False and abs(tie["strategy_sharpe"] - tie["buy_hold_sharpe"]) < 1e-9
+    assert win["beats"] is True and win["strategy_sharpe"] > win["buy_hold_sharpe"]
+    assert abs(tie["buy_hold_return_same_risk"] - tie["strategy_return"]) < 1e-9  # Same risk, same days: same return.
+    assert ex.risk_matched_buy_and_hold(features, half_gold.iloc[:5])["available"] is False
+
+
+def test_full_report_carries_the_benchmark_for_oos_and_holdout():
+    d = CATALOGUE["cat_ema_cross_h1"].defn
+    report = ex.full_report(d, market("h1", 9000), CostModel(), train_years=1, test_months=3, holdout_years=0, dataset="test")
+    b = report["risk_matched_benchmark"]
+    assert set(b) >= {"out_of_sample", "holdout", "beats_both", "method"} and "beats_buy_and_hold" in report["verdict"]

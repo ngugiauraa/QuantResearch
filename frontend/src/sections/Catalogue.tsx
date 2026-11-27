@@ -40,8 +40,9 @@ export function Catalogue() {
       <ErrorBox error={cat.error ?? error} />
       <Notice>
         Each strategy runs with fixed parameters through the same walk-forward split, untouched two-year holdout and stressed costs as the 8 engines. Every run is
-        recorded and nothing is deleted. &quot;Promising&quot; needs 30+ out-of-sample trades, positive results out of sample, in the holdout and under stressed costs, and a
-        deflated Sharpe above 0.95 counted against every variant tested ({trials ? `${trials.variants} so far` : "all of them"}). Promising is not a recommendation: paper trading comes next.
+        recorded and nothing is deleted. &quot;Promising&quot; needs 30+ out-of-sample trades, positive results out of sample, in the holdout and under stressed costs, a
+        deflated Sharpe above 0.95 counted against every variant tested ({trials ? `${trials.variants} so far` : "all of them"}), and (an added requirement) beating
+        long-only gold at the same risk both out of sample and in the holdout. Promising is not a recommendation: paper trading comes next.
       </Notice>
       <div className="grid">
         <Stat label="Strategies" value={fmt(cat.data?.strategies?.length, 0)} />
@@ -57,7 +58,7 @@ export function Catalogue() {
           <span className="muted">{cat.data?.worker?.current ? `Running ${cat.data.worker.current}` : pending ? `${pending} waiting` : "Idle"}</span>
         </div>
         {cat.loading ? <Loading /> : (
-          <Table columns={["", "Strategy", "Family", "TF", "Result", "OOS trades", "OOS Sharpe", "Deflated Sharpe (own)", "Deflated Sharpe (all trials)", "Holdout net", "Stressed net", "Status", ""]}
+          <Table columns={["", "Strategy", "Family", "TF", "Result", "OOS trades", "OOS Sharpe", "Deflated Sharpe (own)", "Deflated Sharpe (all trials)", "Holdout net", "Stressed net", "Beats buy-and-hold", "Status", ""]}
             rows={rows.map((s: any) => {
               const v = s.report?.catalogue_verdict;
               const status = s.queue?.status;
@@ -68,6 +69,7 @@ export function Catalogue() {
                 s.family, s.timeframe.toUpperCase(),
                 v ? <Pill key="v" tone={tone(v.label)}>{LABELS[v.label] ?? v.label}</Pill> : <span key="v" className="muted">Not run</span>,
                 fmt(v?.oos_trades, 0), fmt(v?.oos_sharpe), fmt(v?.deflated_sharpe_own), fmt(v?.deflated_sharpe_project), fmt(v?.holdout_net), fmt(v?.holdout_net_stress),
+                v ? (v.beats_buy_and_hold ? <Pill key="b" tone="ok">yes</Pill> : <Pill key="b" tone="bad">no</Pill>) : "–",
                 status ? <Pill key="s" tone={STATUS_TONE[status] ?? "warn"}>{status}</Pill> : s.report ? <span key="s" className="muted">{when(s.report.created_at)}</span> : "–",
                 <button key="r" className="btn" onClick={() => post(`/api/catalogue/run/${s.name}`)} disabled={status === "running" || status === "pending"}>Run</button>,
               ];

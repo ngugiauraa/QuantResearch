@@ -84,6 +84,8 @@ def catalogue_verdict(report: dict, project_dsr: dict) -> dict:
         "holdout_positive": observed > 0,
         "stressed_costs_positive": stressed > 0,
         "project_deflated_sharpe": project_dsr["dsr"] > PROMISING_DSR,
+        # Added 2026-11-28: beat long-only gold at the same risk, out of sample and in the holdout.
+        "beats_buy_and_hold": bool(report.get("risk_matched_benchmark", {}).get("beats_both", False)),
     }
     if not checks["enough_oos_trades"]:
         label = "insufficient_evidence"
@@ -96,8 +98,15 @@ def catalogue_verdict(report: dict, project_dsr: dict) -> dict:
     return {"label": label, "promising": all(checks.values()), "checks": checks, "oos_trades": oos.get("trades", 0), "oos_sharpe": wf.get("oos_sharpe"),
             "oos_net": oos.get("net_profit"), "holdout_net": observed, "holdout_net_stress": stressed,
             "deflated_sharpe_own": wf["deflated_sharpe"]["dsr"], "deflated_sharpe_project": project_dsr["dsr"],
+            "beats_buy_and_hold": checks["beats_buy_and_hold"], "buy_hold": _bh_summary(report),
             "project_trials": project_dsr["trials"], "expected_max_sr_daily": project_dsr["expected_max_sr"],
             "note": "Not a recommendation. Promising means it survived these tests, not that it will make money. Paper trading comes next."}
+
+
+def _bh_summary(report: dict) -> dict:
+    b = report.get("risk_matched_benchmark", {})
+    return {k: {"strategy_sharpe": b.get(k, {}).get("strategy_sharpe"), "buy_hold_sharpe": b.get(k, {}).get("buy_hold_sharpe"),
+                "beats": b.get(k, {}).get("beats")} for k in ("out_of_sample", "holdout")}
 
 
 def run(name: str, p: Paths | None = None) -> dict:

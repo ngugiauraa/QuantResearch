@@ -72,6 +72,42 @@ def _run_slice(signals: pd.DataFrame, name: str, start, end, costs: CostModel, e
     return engine
 
 
+def _daily_series(curve: pd.Series) -> pd.Series:
+    """Daily returns of an equity curve, indexed by UTC date."""
+    if len(curve) < 2:
+        return pd.Series(dtype="float64")
+    return curve.groupby(curve.index.floor("D")).last().pct_change().dropna()
+
+
+def _utc_dates(index) -> pd.DatetimeIndex:
+    idx = pd.DatetimeIndex(index)
+    return (idx.tz_convert("UTC").tz_localize(None) if idx.tz is not None else idx).normalize()
+
+
+def risk_matched_buy_and_hold(features: pd.DataFrame, strategy_daily: pd.Series) -> dict:
+    """Compare a strategy with a long-only gold position at the same risk over the same days.
+
+    The gold position is scaled to the strategy's own daily volatility. Scaling does not change a Sharpe ratio, so
+    the strategy beats it exactly when its Sharpe is higher than gold's over the same days; the vol-matched gold
+    return is shown for scale. Flat days count for both (the strategy earned nothing on them).
+    """
+    if strategy_daily is None or len(strategy_daily) < 20:
+        return {"available": False, "beats": False, "reason": "fewer than 20 days of strategy returns"}
+    gold = features.groupby(_utc_dates(features["ts"]))["close"].last().pct_change().dropna()
+    strat = pd.Series(strategy_daily.to_numpy(), index=_utc_dates(strategy_daily.index))
+    strat = strat.groupby(level=0).last()
+    days = strat.index.intersection(gold.index)
+    if len(days) < 20:
+        return {"available": False, "beats": False, "reason": "fewer than 20 common days"}
+    s, g = strat.loc[days], gold.loc[days]
+    sd_s, sd_g = s.std(ddof=1), g.std(ddof=1)
+    matched = g * (sd_s / sd_g) if sd_g > 0 else g * 0
+    sh_s, sh_g = stats.sharpe(s.to_numpy()), stats.sharpe(g.to_numpy())
+    return {"available": True, "days": int(len(days)), "first": str(days[0].date()), "last": str(days[-1].date()),
+            "strategy_sharpe": sh_s, "buy_hold_sharpe": sh_g, "strategy_return": float((1 + s).prod() - 1),
+            "buy_hold_return_same_risk": float((1 + matched).prod() - 1), "beats": bool(sh_s > sh_g and sd_s > 0)}
+
+
 def _daily_returns(engine: Engine) -> np.ndarray:
     curve = engine.equity_curve()
     if len(curve) < 2:
@@ -144,7 +180,8 @@ def walk_forward(defn: StrategyDef, features: pd.DataFrame, costs: CostModel, tr
                         "test_trades": int(len(frame)), "test_net": float(frame["net"].sum()) if len(frame) else 0.0})
     trades = pd.concat(oos_trades, ignore_index=True) if oos_trades else pd.DataFrame()
     curve = pd.concat(oos_curves) if oos_curves else pd.Series(dtype="float64")
-    daily = curve.groupby(curve.index.floor("D")).last().pct_change().dropna().to_numpy() if len(curve) > 1 else np.zeros(0)
+    daily_series = _daily_series(curve)
+    daily = daily_series.to_numpy()
     # Per-period Sharpe for the trial comparison: annual figures are scaled back to daily.
     trial_daily = [s / np.sqrt(252) for s in trial_sharpes]
     return {
@@ -158,6 +195,7 @@ def walk_forward(defn: StrategyDef, features: pd.DataFrame, costs: CostModel, tr
                                   for k, v in sensitivity.items()},
         "last_params": next((r["params"] for r in reversed(records) if "params" in r), None),
         "_daily_returns": daily,  # Private: for project-wide deflation (research/trials.py). Never saved.
+        "_daily_series": daily_series,  # Private: the same, dated, for the buy-and-hold comparison.
     }
 
 
@@ -195,6 +233,7 @@ def full_report(defn: StrategyDef, features: pd.DataFrame, costs: CostModel | No
     costs = costs or CostModel()
     wf = walk_forward(defn, features, costs, train_years, test_months, holdout_years, execution=execution)
     oos_daily = wf.pop("_daily_returns")
+    oos_series = wf.pop("_daily_series")
     holdout_start = pd.Timestamp(wf["holdout_start"], tz="UTC")
     params = wf["last_params"] or defn.defaults
     params = {**defn.defaults, **params}
@@ -210,6 +249,11 @@ def full_report(defn: StrategyDef, features: pd.DataFrame, costs: CostModel | No
         rep.pop("breakdowns", None)
         by_scenario[label] = rep
     base = _run_slice(signals, defn.name, holdout_start, end, costs, execution)
+    oos_bh, hold_bh = risk_matched_buy_and_hold(features, oos_series), risk_matched_buy_and_hold(features, _daily_series(base.equity_curve()))
+    buy_hold = {"out_of_sample": oos_bh, "holdout": hold_bh, "beats_both": bool(oos_bh["beats"] and hold_bh["beats"]),
+                "method": "Long-only gold scaled to the strategy's own daily volatility over the same days (out-of-sample folds, then the "
+                          "holdout). Same risk means the comparison is Sharpe against Sharpe. Added 2026-11-28 as a required check: "
+                          "a strategy that does not beat it in both periods is not promising."}
     hypotheses = run_hypotheses(defn, features, wf["holdout_start"], params)
     # Gold's own return over the same periods. A long-biased rule can look good just by holding a rising market.
     first_test = pd.Timestamp(wf["folds"][0]["train_end"], tz="UTC") if wf["folds"] and "train_end" in wf["folds"][0] else features["ts"].iloc[0]
@@ -225,15 +269,15 @@ def full_report(defn: StrategyDef, features: pd.DataFrame, costs: CostModel | No
         "signal_timeframe": defn.signal_tf, "execution": "signal_bars" if execution is None else "finer_bars",
         "period": {"first": str(features["ts"].iloc[0]), "last": str(features["ts"].iloc[-1]), "holdout_start": wf["holdout_start"]},
         "cost_model": costs.as_dict(), "defaults": defn.defaults, "grid": defn.grid,
-        "hypotheses": hypotheses, "walk_forward": wf, "benchmark": benchmark,
+        "hypotheses": hypotheses, "walk_forward": wf, "benchmark": benchmark, "risk_matched_benchmark": buy_hold,
         "holdout": {"params": {k: params[k] for k in defn.grid}, "scenarios": by_scenario,
                     "report": metrics.report(base.trades_frame(), base.equity_curve(), 100_000.0, regime_labels(features))},
-        "verdict": verdict(wf, by_scenario),
+        "verdict": verdict(wf, by_scenario, buy_hold),
         "_oos_daily": oos_daily,
     }
 
 
-def verdict(wf: dict, holdout: dict) -> dict:
+def verdict(wf: dict, holdout: dict, buy_hold: dict | None = None) -> dict:
     """A plain summary. It can only say a result is promising or not; it never approves trading."""
     oos = wf["out_of_sample"]
     trades = oos.get("trades", 0)
@@ -241,16 +285,17 @@ def verdict(wf: dict, holdout: dict) -> dict:
     stressed = holdout.get("stress", {}).get("net_profit") or 0.0
     observed = holdout.get("observed", {}).get("net_profit") or 0.0
     positive = (oos.get("net_profit") or 0) > 0 and wf["oos_sharpe"] > 0
+    beats = bool(buy_hold and buy_hold.get("beats_both"))
     if trades < 30:
         label = "insufficient_evidence"
-    elif positive and dsr > 0.95 and observed > 0 and stressed > 0:
+    elif positive and dsr > 0.95 and observed > 0 and stressed > 0 and beats:
         label = "survives_tests_needs_paper_trading"
     elif positive:
         label = "weak_or_not_significant"
     else:
         label = "no_edge_found"
     return {"label": label, "oos_trades": trades, "oos_sharpe": wf["oos_sharpe"], "deflated_sharpe": dsr,
-            "holdout_net": observed, "holdout_net_stress": stressed,
+            "holdout_net": observed, "holdout_net_stress": stressed, "beats_buy_and_hold": beats,
             "note": "Not a recommendation. Live use also needs paper trading and broker-specific cost checks."}
 
 

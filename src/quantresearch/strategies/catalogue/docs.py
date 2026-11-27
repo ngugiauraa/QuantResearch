@@ -37,7 +37,9 @@ def write(folder: Path = DOCS) -> tuple[Path, Path]:
              "'promising' counts every variant ever tested by the engines and the catalogue (N), with the luck spread taken from the "
              "catalogue's out-of-sample Sharpes; all strategies are re-scored against the final count. A strategy is only promising if it has at least 30 "
              "out-of-sample trades, is positive out of sample, positive in the holdout, positive in the holdout under stressed costs, and has a "
-             "project-wide deflated Sharpe above 0.95.", "",
+             "project-wide deflated Sharpe above 0.95, and beats a long-only gold position at the same risk in both the out-of-sample folds and the "
+             "holdout (added 2026-11-28, after gold's 6.7x rise was seen to flatter long-biased rules). The deflation method was changed once, "
+             "after batch 1's results, and is now frozen with these criteria.", "",
              "**Conventions.** Signals act at a bar's close and fill on a later event, so 'breaks above X' means 'closes above X'. ATR is Wilder ATR(14) "
              "on the strategy's timeframe. Every strategy has a stop because positions are sized from it (0.5% risk). Times are local market time "
              "with daylight saving. 'Needs data we don't have' strategies are implemented but cannot trade until that data exists.", "",
