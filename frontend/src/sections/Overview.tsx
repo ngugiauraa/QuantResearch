@@ -109,7 +109,7 @@ export function Overview() {
               <div className="flex flex-wrap gap-2">
                 <Badge ok={ready}>Warehouse {ready ? "ready" : "not built"}</Badge>
                 <Badge ok={!!health.data?.broker_connected} warn={!health.data?.broker_connected && data?.mode === "paper"}>Broker: {health.data?.broker ?? "–"}</Badge>
-                <Badge ok={!!health.data?.mt5?.connected} warn>MT5 {health.data?.mt5?.connected ? "connected" : "not connected"}</Badge>
+                <Badge ok={health.data?.mt5?.status === "connected"} warn>MT5 {health.data?.mt5?.status === "connected" ? "connected" : health.data?.mt5?.status === "not_configured" ? "not configured" : "not connected"}</Badge>
                 <Badge ok={!!health.data?.audit_chain_intact}>Audit chain {health.data?.audit_chain_intact ? "intact" : "broken"}</Badge>
                 <Badge ok={!health.data?.live_active} warn={!!health.data?.live_active}>Live trading {health.data?.live_active ? "ACTIVE" : "off"}</Badge>
               </div>

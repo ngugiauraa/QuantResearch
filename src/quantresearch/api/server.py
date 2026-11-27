@@ -152,9 +152,20 @@ def create_app(services: Services | None = None) -> FastAPI:
                 return regimes.iloc[-1].to_dict()
         return None
 
+    def overview_quote() -> dict:
+        """The broker's live quote when a real broker is attached; otherwise, or if that read fails, the paper
+        price, which is the last stored bar and is labelled so."""
+        if not svc.broker.is_simulated:
+            try:
+                q = svc.broker.quote()
+                return {"source": svc.broker.name, "time": q.time, "bid": q.bid, "ask": q.ask}
+            except BrokerError:
+                pass
+        return svc.refresh_paper_quote()
+
     @app.get("/api/overview")
     def overview():
-        quote = svc.refresh_paper_quote()
+        quote = overview_quote()
         # Regime and signals use closed bars only, so they change at most once a minute. Computing them took seconds
         # per call, and every open page polls this endpoint, so requests queued without limit. Share one result a minute.
         latest_regime = svc.cached("overview_regime", 60, current_regime) if has_bars("h1") else None
