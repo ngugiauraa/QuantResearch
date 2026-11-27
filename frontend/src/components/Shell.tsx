@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
-import { BarChart3, BookOpen, Bell, Brain, CandlestickChart, ChevronsLeft, ChevronsRight, Clock, Compass, Cpu, FlaskConical, Globe, Home, LineChart, Menu, Settings, Shield, Signal, SquareTerminal, Wifi, X } from "lucide-react";
+import { BarChart3, BookOpen, Bell, Brain, CandlestickChart, ChevronsLeft, ChevronsRight, Clock, Compass, Cpu, FlaskConical, Globe, Home, LineChart, Menu, Settings, Shield, Signal, SquareTerminal, TrendingUp, Wifi, X } from "lucide-react";
 import { fmt, useFetch } from "@/lib/api";
 import { FlashNumber, StatusDot } from "@/components/ui";
 
@@ -11,6 +11,7 @@ export const GROUPS: { title: string; icon: ReactNode; items: NavItem[] }[] = [
     { key: "overview", label: "Overview", icon: <Home size={I} /> },
     { key: "terminal", label: "Trading Terminal", icon: <SquareTerminal size={I} /> },
     { key: "charts", label: "Market Charts", icon: <CandlestickChart size={I} /> },
+    { key: "tradingview", label: "TradingView", icon: <TrendingUp size={I} /> },
   ] },
   { title: "Research", icon: <FlaskConical size={12} />, items: [
     { key: "discovery", label: "Strategy Discovery", icon: <Compass size={I} /> },

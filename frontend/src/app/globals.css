@@ -96,3 +96,6 @@ main h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: r
 .grid-chart { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 1024px) { .grid-chart { grid-template-columns: minmax(0, 7fr) minmax(0, 3fr); } }
 .grid-chart > .card { margin-bottom: 0; }
+
+/* TradingView's embed script swaps its placeholder for an iframe with the browser's default 150px height. */
+.tradingview-widget-container iframe { width: 100% !important; height: 100% !important; display: block; }
