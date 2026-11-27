@@ -1,12 +1,19 @@
 # Strategy catalogue
 
-41 gold (XAUUSD) strategies that are commonly claimed to be automatable, plus some of this project's own ideas. Each is implemented in `src/quantresearch/strategies/catalogue/` and runs through exactly the same research as the 8 engines: walk-forward out-of-sample folds, the untouched two-year holdout, observed and stressed costs, and the same report.
+61 gold (XAUUSD) strategies that are commonly claimed to be automatable, plus some of this project's own ideas. Each is implemented in `src/quantresearch/strategies/catalogue/` and runs through exactly the same research as the 8 engines: walk-forward out-of-sample folds, the untouched two-year holdout, observed and stressed costs, and the same report.
 
 **Hard rules.** Parameters are fixed as written here and are never tuned (each strategy has one variant; the first run locks it). Every run is recorded in the experiment ledger and the trial book, and nothing is deleted. The deflated Sharpe that decides 'promising' counts every variant ever tested by the engines and the catalogue. A strategy is only promising if it has at least 30 out-of-sample trades, is positive out of sample, positive in the holdout, positive in the holdout under stressed costs, and has a project-wide deflated Sharpe above 0.95.
 
 **Conventions.** Signals act at a bar's close and fill on a later event, so 'breaks above X' means 'closes above X'. ATR is Wilder ATR(14) on the strategy's timeframe. Every strategy has a stop because positions are sized from it (0.5% risk). Times are local market time with daylight saving. 'Needs data we don't have' strategies are implemented but cannot trade until that data exists.
 
 Regenerate with `python -m quantresearch.strategies.catalogue.docs`. Run with `python -m quantresearch.research.catalogue --all` or from the dashboard's Strategy Catalogue table.
+
+## Needs data we don't have
+
+- `cat_nfp_fade_m15`: the official BLS release calendar (the BLS site refused automated access); the first-Friday rule is an approximation that misses some months
+- `cat_nfp_follow_m15`: the official BLS release calendar (the BLS site refused automated access); the first-Friday rule is an approximation that misses some months
+- `cat_cpi_fade_m15`: US CPI release times (the BLS schedule refused automated access); no trades until a hours_since_cpi column is supplied
+- `cat_options_expiry_d1`: the exchange's options expiry calendar; expiry is approximated as five business days before month end, which ignores holidays
 
 ## Batch 1
 
@@ -462,3 +469,229 @@ Regenerate with `python -m quantresearch.strategies.catalogue.docs`. Run with `p
 - **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
 - **Data:** XAUUSD daily bars; VIX close (FRED VIXCLS)
 - **Parameters (fixed):** `{"rise": 0.25, "stop_atr": 3.0, "hold": 10}`
+
+## Batch 3
+
+### `cat_asian_range_london_m15`: Asian range breakout at the London open
+
+- **Family:** Session and time of day. **Timeframe:** M15.
+- **Source:** Widely taught 'London breakout' rule for gold and FX; own exact windows
+- **Logic:** London traders often push price out of the quiet Asian range; follow the first break.
+- **Entry:** Asian range = high/low of M15 bars opening 00:00-07:00 London time. Between 07:00 and 10:00 London, enter on the first close above the range high (long) or below the low (short); one trade a day.
+- **Exit:** Target 1 x the range width; flat at the first bar from 16:00 London.
+- **Stop:** 1 x the range width (at least 0.5 ATR).
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_range": 1.0, "target_range": 1.0}`
+
+### `cat_london_orb_m15`: London 30-minute opening-range breakout
+
+- **Family:** Session and time of day. **Timeframe:** M15.
+- **Source:** Toby Crabel's opening-range breakout (1990), applied to the London open
+- **Logic:** The first half hour of London sets a range; a break of it shows the morning's direction.
+- **Entry:** Range = 08:00-08:30 London. Between 08:30 and 11:00, first close above the range (long) or below it (short); one trade a day.
+- **Exit:** Target 1.5 x range width; flat from 16:00 London.
+- **Stop:** 1 x the range width (at least 0.5 ATR).
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_range": 1.0, "target_range": 1.5}`
+
+### `cat_ny_orb_m15`: New York 30-minute opening-range breakout
+
+- **Family:** Session and time of day. **Timeframe:** M15.
+- **Source:** Toby Crabel (1990); COMEX gold opens 08:20 New York
+- **Logic:** The first US half hour sets the day's range; trade its break.
+- **Entry:** Range = 08:30-09:00 New York. Between 09:00 and 12:00, first close above (long) or below (short) it; one trade a day.
+- **Exit:** Target 1.5 x range width; flat from 15:00 New York.
+- **Stop:** 1 x the range width (at least 0.5 ATR).
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_range": 1.0, "target_range": 1.5}`
+
+### `cat_london_close_reversal_m15`: London close reversal
+
+- **Family:** Session and time of day. **Timeframe:** M15.
+- **Source:** Commonly taught FX/gold session rule (London close profit-taking); own thresholds
+- **Logic:** When London has pushed far, positions are often squared as London closes.
+- **Entry:** At the bar closing 15:00 London: if close - the 08:00 London open exceeds 0.5 x yesterday's range, short (or long if the move was down).
+- **Exit:** Flat from 19:00 London.
+- **Stop:** 0.25 x yesterday's high-low range.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"move_range": 0.5, "stop_range": 0.25}`
+
+### `cat_pm_fix_drift_m15`: Pre-auction drift into the 15:00 London gold price
+
+- **Family:** Scheduled events. **Timeframe:** M15.
+- **Source:** Caminschi and Heaney, 'Fixing a Leaky Fixing', Journal of Futures Markets 34(11), 2014
+- **Logic:** Prices drifted in the direction of the fix before it was announced; follow that drift into the auction.
+- **Entry:** On the M15 bar 14:30-14:45 London: if its close is more than 1 x ATR(14) from its open, enter in that direction at 14:45.
+- **Exit:** Exit after one M15 bar (15:00, the auction start).
+- **Stop:** 1.5 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"move_atr": 1.0, "stop_atr": 1.5, "hold": 1}`
+
+### `cat_am_fix_drift_m15`: Pre-auction drift into the 10:30 London gold price
+
+- **Family:** Scheduled events. **Timeframe:** M15.
+- **Source:** Caminschi and Heaney (2014), applied to the morning auction; own extension
+- **Logic:** The same drift idea, at the morning fix.
+- **Entry:** On the M15 bar 10:15-10:30 London: if its close is more than 1 x ATR(14) from its open, enter in that direction at 10:30.
+- **Exit:** Exit after one M15 bar (10:45, as the auction runs).
+- **Stop:** 1.5 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"move_atr": 1.0, "stop_atr": 1.5, "hold": 1}`
+
+### `cat_overnight_long_h1`: Overnight hold: COMEX open to London open
+
+- **Family:** Session and time of day. **Timeframe:** H1.
+- **Source:** Adapted from Cooper, Cliff and Gulen, 'Return Differences between Trading and Non-trading Hours', Journal of Financial Markets 11(2), 2008
+- **Logic:** Much of some markets' return arrives outside the main trading session; test that for gold's Asian hours.
+- **Entry:** Long on the first H1 bar of each COMEX trading day (opens 18:00 New York). Long only.
+- **Exit:** Exit at the bar opening 03:00 New York; at most 12 bars.
+- **Stop:** 2 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_atr": 2.0, "max_hold": 12}`
+
+### `cat_us_session_short_h1`: Short the US session
+
+- **Family:** Session and time of day. **Timeframe:** H1.
+- **Source:** Own test of the often-repeated claim that gold rises in Asian hours and falls in US hours
+- **Logic:** If US hours are systematically weak for gold, a daily short across them should show it.
+- **Entry:** Short at the bar opening 08:00 New York, Monday to Friday.
+- **Exit:** Exit at the bar opening 16:00 New York; at most 8 bars.
+- **Stop:** 2 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_atr": 2.0, "max_hold": 8}`
+
+### `cat_shanghai_session_long_m15`: Long the Shanghai day session
+
+- **Family:** Session and time of day. **Timeframe:** M15.
+- **Source:** Own test of the commonly claimed Chinese-demand bid during Shanghai hours
+- **Logic:** If Chinese buying lifts gold during the Shanghai day session, a long across it should earn.
+- **Entry:** Long at the M15 bar opening 09:00 Asia/Shanghai, Monday to Friday. Long only.
+- **Exit:** Exit at the bar opening 15:30 Asia/Shanghai; at most 26 bars.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_atr": 3.0, "max_hold": 26}`
+
+### `cat_weekend_hold_h1`: Hold gold over the weekend
+
+- **Family:** Calendar. **Timeframe:** H1.
+- **Source:** Own test of the weekend geopolitical risk-premium claim
+- **Logic:** Weekend news risk may be priced as a premium for holding gold into Monday.
+- **Entry:** Long at the bar opening 15:00 New York on Friday.
+- **Exit:** Exit at the bar opening 03:00 New York on Monday; at most 60 bars.
+- **Stop:** 2.5 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_atr": 2.5, "max_hold": 60}`
+
+### `cat_monday_short_h1`: Monday weakness (weekend effect)
+
+- **Family:** Calendar. **Timeframe:** H1.
+- **Source:** Ball, Torous and Tschoegl, 'Gold and the Weekend Effect', Journal of Futures Markets 2(2), 1982
+- **Logic:** Monday returns in gold were historically weak; test whether that still holds.
+- **Entry:** Short on the first H1 bar after the weekend (the Sunday-evening reopening).
+- **Exit:** Exit at the bar opening 16:00 New York on Monday.
+- **Stop:** 2 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_atr": 2.0, "max_hold": 30}`
+
+### `cat_fomc_pre_drift_h1`: Pre-FOMC drift
+
+- **Family:** Scheduled events. **Timeframe:** H1.
+- **Source:** Lucca and Moench, 'The Pre-FOMC Announcement Drift', Journal of Finance 70(1), 2015 (equities)
+- **Logic:** Prices drifted up ahead of Fed decisions in equities; test whether gold does the same.
+- **Entry:** Long on the first H1 close less than 24 hours before a scheduled FOMC decision (customary 14:00 New York statement time). Long only.
+- **Exit:** Exit on the first bar closing less than 30 minutes before the decision; at most 26 bars.
+- **Stop:** 2 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD H1 bars; FOMC decision calendar (federalreserve.gov)
+- **Parameters (fixed):** `{"hours_before": 24.0, "exit_hours_before": 0.5, "stop_atr": 2.0, "max_hold": 26}`
+
+### `cat_fomc_post_follow_h1`: Follow the first two hours after FOMC
+
+- **Family:** Scheduled events. **Timeframe:** H1.
+- **Source:** Own idea, after the post-announcement drift literature
+- **Logic:** A strong first reaction to a Fed decision may continue as the market digests it.
+- **Entry:** Reference = the close of the bar ending at the decision. On the bar closing 2 hours later: if the close is more than 1 x ATR(14) from the reference, enter in that direction.
+- **Exit:** Exit after 24 bars.
+- **Stop:** 2 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD H1 bars; FOMC decision calendar
+- **Parameters (fixed):** `{"after_hours": 2.0, "move_atr": 1.0, "stop_atr": 2.0, "hold": 24}`
+
+### `cat_nfp_fade_m15`: Fade the first payrolls hour
+
+- **Family:** Scheduled events. **Timeframe:** M15.
+- **Source:** Commonly taught 'fade the NFP spike' rule; own thresholds
+- **Logic:** The first reaction to payrolls often overshoots and partly reverses.
+- **Entry:** On the first Friday of the month, at the bar closing 09:30 New York: if the close is more than 4 x ATR(14, M15) from the 08:30 level, enter against the move.
+- **Exit:** Flat from 15:00 New York.
+- **Stop:** 0.5 x the move (at least 1 ATR).
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"move_atr": 4.0, "stop_move": 0.5}`
+- **Needs data we don't have:** the official BLS release calendar (the BLS site refused automated access); the first-Friday rule is an approximation that misses some months
+
+### `cat_nfp_follow_m15`: Follow the first payrolls hour
+
+- **Family:** Scheduled events. **Timeframe:** M15.
+- **Source:** Own idea, the opposite test of the NFP fade
+- **Logic:** A strong payrolls reaction may set the day's trend.
+- **Entry:** On the first Friday of the month, at the bar closing 09:30 New York: if the close is more than 4 x ATR(14, M15) from the 08:30 level, enter with the move.
+- **Exit:** Flat from 15:00 New York.
+- **Stop:** 0.5 x the move (at least 1 ATR).
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"move_atr": 4.0, "stop_move": 0.5}`
+- **Needs data we don't have:** the official BLS release calendar (the BLS site refused automated access); the first-Friday rule is an approximation that misses some months
+
+### `cat_cpi_fade_m15`: Fade the first hour after US CPI
+
+- **Family:** Scheduled events. **Timeframe:** M15.
+- **Source:** Commonly taught data-release fade; own thresholds
+- **Logic:** The first CPI reaction tends to overshoot.
+- **Entry:** Reference = the close of the bar ending at the 08:30 New York release. On the bar closing one hour later: if the close is more than 4 x ATR(14, M15) from the reference, enter against the move.
+- **Exit:** Exit after 20 bars.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD M15 bars; US CPI release times
+- **Parameters (fixed):** `{"move_atr": 4.0, "stop_atr": 3.0, "hold": 20}`
+- **Needs data we don't have:** US CPI release times (the BLS schedule refused automated access); no trades until a hours_since_cpi column is supplied
+
+### `cat_autumn_long_d1`: Autumn effect
+
+- **Family:** Calendar. **Timeframe:** D1.
+- **Source:** Dirk Baur, 'The Autumn Effect of Gold', Research in International Business and Finance 27(1), 2013
+- **Logic:** Gold has historically done best in September to November, linked to Indian wedding-season demand.
+- **Entry:** Long on the first trading day of September. Long only.
+- **Exit:** Exit on the last trading day of November.
+- **Stop:** 4 x the project's Wilder ATR(14) on the signal timeframe, catastrophic.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_atr": 4.0}`
+
+### `cat_january_long_d1`: January strength
+
+- **Family:** Calendar. **Timeframe:** D1.
+- **Source:** Own test of the commonly repeated 'January is gold's best month' claim
+- **Logic:** Year-start allocation and Lunar New Year demand are said to lift gold in January.
+- **Entry:** Long on the first trading day of January. Long only.
+- **Exit:** Exit on the last trading day of January.
+- **Stop:** 4 x the project's Wilder ATR(14) on the signal timeframe, catastrophic.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_atr": 4.0}`
+
+### `cat_options_expiry_d1`: Rebound after COMEX options expiry
+
+- **Family:** Scheduled events. **Timeframe:** D1.
+- **Source:** Own test of the 'options pinning then release' claim
+- **Logic:** Price may be held down into option expiry and released afterwards.
+- **Entry:** Long on the trading day four days before the end of Jan, Mar, May, Jul, Sep and Nov (the day after the usual expiry). Long only.
+- **Exit:** Exit after 3 days.
+- **Stop:** 3 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"stop_atr": 3.0, "hold": 3}`
+- **Needs data we don't have:** the exchange's options expiry calendar; expiry is approximated as five business days before month end, which ignores holidays
+
+### `cat_settlement_momentum_m15`: Momentum into the COMEX settlement
+
+- **Family:** Session and time of day. **Timeframe:** M15.
+- **Source:** Own idea (settlement-window order flow)
+- **Logic:** Hedgers trading at the settlement may extend a move that is already under way.
+- **Entry:** At the bar closing 13:30 New York: if the close is more than 1.5 x ATR(14) from the 12:30 open, enter in that direction.
+- **Exit:** Exit after 4 bars (one hour).
+- **Stop:** 1.5 x the project's Wilder ATR(14) on the signal timeframe.
+- **Data:** XAUUSD bars (mid prices)
+- **Parameters (fixed):** `{"move_atr": 1.5, "stop_atr": 1.5, "hold": 4}`
