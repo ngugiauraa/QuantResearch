@@ -46,6 +46,10 @@ class CatalogueQueue(BaseModel):
     all_unrun: bool = False
 
 
+class ForwardNote(BaseModel):
+    note: str = ""
+
+
 class OrderBody(BaseModel):
     side: int = Field(ge=-1, le=1)
     lots: float = Field(gt=0)
@@ -448,6 +452,28 @@ def create_app(services: Services | None = None) -> FastAPI:
         started = cat_runner.start_batch(svc.p)
         svc.catalogue_kick()
         return ok({"started": started})
+
+    # ------------------------------------------------------------ forward test 001 (MT5 demo only)
+    @app.get("/api/forward")
+    def forward_status():
+        return ok(svc.cached("forward_status", 10.0, lambda: svc.forward_test().status()))
+
+    @app.post("/api/forward/start")
+    def forward_start():
+        from quantresearch.forward.plan import PlanViolation
+
+        try:
+            record = svc.forward_test().start()
+        except PlanViolation as exc:
+            raise HTTPException(409, str(exc)) from exc
+        svc._cache.pop("forward_status", None)
+        return ok({"started": record})
+
+    @app.post("/api/forward/clear-alert")
+    def forward_clear_alert(body: ForwardNote):
+        out = svc.forward_test().clear_alert(body.note)
+        svc._cache.pop("forward_status", None)
+        return ok(out)
 
     @app.get("/api/research/experiments")
     def experiments():

@@ -148,13 +148,13 @@ def run(name: str, p: Paths | None = None) -> dict:
     return report
 
 
-def research_frame(item, p: Paths, start=None, end=None):
+def research_frame(item, p: Paths, start=None, end=None, bars=None):
     """The engines' research frame plus what catalogue rules read: m_<SERIES> for each macro series, as published by
     each bar's close, and hours since the latest scheduled FOMC decision (the calendar is known in advance)."""
     from quantresearch.external import store as ext
     from quantresearch.features import pit
 
-    frame = ex.load_research_frame(item.defn, start, end, p=p)
+    frame = ex.load_research_frame(item.defn, start, end, p=p, bars=bars)
     events = ext.read_events(p)
     for series in item.macro:
         frame[f"m_{series}"] = pit.align_events(frame["close_ts"], events, series)

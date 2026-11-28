@@ -215,7 +215,7 @@ class Mt5Broker:
         rows = self.mt5.history_deals_get(end - timedelta(days=days), end, group=f"*{self.symbol_name}*") or ()
         return [{"ticket": d.ticket, "position": d.position_id, "time": d.time, "side": 1 if d.type == self.mt5.DEAL_TYPE_BUY else -1,
                  "lots": d.volume, "price": d.price, "profit": d.profit, "commission": d.commission, "swap": d.swap,
-                 "comment": d.comment} for d in rows]
+                 "comment": d.comment, "reason": getattr(d, "reason", None), "entry": getattr(d, "entry", None)} for d in rows]
 
     # ------------------------------------------------------------ writes
     def _guard(self) -> OrderResult | None:

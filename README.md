@@ -711,6 +711,21 @@ Rules: exits that only reduce risk are always allowed, even during an emergency 
 
 The health block's `status` is `not_configured` when `QR_BROKER` is not `mt5` (the paper account), `disconnected` when the terminal cannot be reached, `connected` when it can, and `mock` only for the test stand-in. The check script reads the terminal and nothing else; real prices from it are not yet used by the paper broker.
 
+**Forward test 001 (demo only).** The seven catalogue near-misses run as one pre-registered portfolio on the MT5 demo
+account: `docs/forward_test_001.md` holds the rules and the single pass/fail, and `src/quantresearch/forward/` the code.
+Orders go through the order router and a separate risk engine instance (state in `data/app/forward_001_risk.sqlite`,
+audit in `forward_001_audit.sqlite`, journal in `forward_001.sqlite`). The broker it uses, `DemoOnlyMt5Broker`, reads
+`account_info().trade_mode` before every order, close, modify and cancel and refuses all of them unless MT5 reports
+`ACCOUNT_TRADE_MODE_DEMO`. Anything else, including a contest account or a failed reading, writes
+`forward_test_real_account_refused` to the audit log, pauses the test and shows a red alert on the Forward Test page
+until a person clears it. `QR_LIVE_ENABLED` plays no part and the live path is unchanged: the dashboard's own MT5
+broker still needs live activation. Start it once with the page's Start button or
+`python -m quantresearch.forward.runner start`. The start is refused unless the pre-registration is committed and
+unchanged, the parameters match their lock, the account is a hedging demo, and equity is at least $120,000. Once
+started, the API's `forward-test` thread ticks every 15 s and resumes after restarts. Bars that closed while the
+PC was off are processed on return: their entries are logged as missed (late) and their exits are executed.
+The prediction (the same decision code replayed over the period's M1 bars, observed costs) is recomputed hourly.
+
 **Suggested path:** run read-only with `QR_BROKER=mt5` against a **demo** account, compare spreads and swap, then paper trade, then assisted on demo. Only much later consider real money, and only for a strategy that has passed.
 
 ---
@@ -772,6 +787,8 @@ Controls call real services, and there are no hardcoded statistics. Empty states
 | `NEXT_PUBLIC_API_URL` | none | Build-time, for the dashboard: the API address for a hosted copy. Compiled into the JavaScript, so the dashboard must be behind Cloudflare Access. Never commit it |
 | `QR_MT5_LOGIN`, `QR_MT5_PASSWORD`, `QR_MT5_SERVER` | none | Session-only fallback. Prefer the credential store |
 | `QR_MT5_UTC_OFFSET_HOURS` | 0 | Hours the MT5 server clock is ahead of UTC (Exness: 0). Used to stamp broker bars in UTC |
+| `QR_FORWARD_TEST` | 1 | Runs forward test 001's worker in the API once the test has been started. `0` turns the worker off (missed bars are caught up when it is back on) |
+| `QR_FORWARD_SYMBOL` | `QR_MT5_SYMBOL` or XAUUSDm | The forward test's MT5 symbol |
 | `QR_WAREHOUSE_SYNC` | 1 | With MT5 attached, the API brings the warehouse up to date once per UTC day. `0` turns that off |
 | `SEC_USER_AGENT` | none | Your name and email, for SEC-based skills |
 

@@ -112,8 +112,10 @@ def is_explicit_yes(reply: str, request: OrderRequest) -> bool:
 
 
 class OrderRouter:
-    def __init__(self, broker: Broker, risk: RiskEngine, audit: AuditLog | None = None, mode: Mode = Mode.PAPER):
+    def __init__(self, broker: Broker, risk: RiskEngine, audit: AuditLog | None = None, mode: Mode = Mode.PAPER, clock=None):
         self.broker = broker
+        # The time risk checks see. Replays pass their simulated clock; everything else uses the wall clock.
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.risk = risk
         self.audit = audit or AuditLog()
         self.pending_approvals: dict[str, OrderRequest] = {}
@@ -169,7 +171,7 @@ class OrderRouter:
         account = self.broker.account()
         positions = self.broker.positions()
         quote = self.broker.quote()
-        now = datetime.now(timezone.utc)
+        now = self.clock()
         self.risk.observe(account.equity, now, account_key(self.broker))
         return self.risk.evaluate(
             Proposal(request.side, request.lots, request.entry, request.stop, request.target, request.source),
@@ -244,7 +246,7 @@ class OrderRouter:
         decision = self.risk.evaluate(
             Proposal(-current.side, current.lots, mark, source=source, reduces_position=True),
             Account(self.broker.account().equity, None, current.lots, len(positions)),
-            Market(quote.bid, quote.ask, None),
+            Market(quote.bid, quote.ask, None, self.clock()),
         )
         if not decision.approved:
             return RouteResult("rejected", "; ".join(decision.reasons))

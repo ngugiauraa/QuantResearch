@@ -6,6 +6,7 @@ import { TradingView } from "@/sections/TradingView";
 import { Intelligence } from "@/sections/Intelligence";
 import { Research } from "@/sections/Research";
 import { Catalogue } from "@/sections/Catalogue";
+import { ForwardTest } from "@/sections/ForwardTest";
 import { Discovery } from "@/sections/Discovery";
 import { MachineLearning } from "@/sections/MachineLearning";
 import { TimeMachine } from "@/sections/TimeMachine";
@@ -16,7 +17,7 @@ import { Performance } from "@/sections/Performance";
 import { GROUPS, Sidebar, TopBar, useShellData } from "@/components/Shell";
 
 const SECTIONS: Record<string, () => React.JSX.Element> = {
-  overview: Overview, charts: Charts, tradingview: TradingView, intel: Intelligence, research: Research, catalogue: Catalogue, discovery: Discovery, ml: MachineLearning,
+  overview: Overview, charts: Charts, tradingview: TradingView, intel: Intelligence, research: Research, catalogue: Catalogue, forward: ForwardTest, discovery: Discovery, ml: MachineLearning,
   timemachine: TimeMachine, skills: Skills, terminal: Terminal, risk: Risk, performance: Performance,
 };
 const LABELS: Record<string, string> = Object.fromEntries(GROUPS.flatMap((g) => g.items.map((i) => [i.key, i.label])));

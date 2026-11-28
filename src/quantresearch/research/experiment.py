@@ -349,12 +349,15 @@ def _json_default(value):
     return str(value)
 
 
-def load_research_frame(defn: StrategyDef, start=None, end=None, p: Paths | None = None) -> pd.DataFrame:
+def load_research_frame(defn: StrategyDef, start=None, end=None, p: Paths | None = None, bars: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Features plus cross-market and macro columns. `bars` replaces the warehouse read (the forward test passes
+    warehouse-plus-broker bars); everything after it is the same code the research used."""
     from quantresearch.external import store as ext
     from quantresearch.features.registry import build_features
     from quantresearch.warehouse.store import load_bars
 
-    bars = load_bars(defn.signal_tf, start, end, p=p)
+    if bars is None:
+        bars = load_bars(defn.signal_tf, start, end, p=p)
     frame = build_features(bars)
     if defn.needs:
         frame = ext.attach_cross(frame, defn.needs, p)

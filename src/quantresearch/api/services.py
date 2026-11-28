@@ -61,6 +61,24 @@ class Services:
             threading.Thread(target=self._daily_sync, name="warehouse-sync", daemon=True).start()
         self.catalogue_worker: dict = {"current": None, "started": False}
         self._catalogue_wake = threading.Event()
+        # Forward test 001: resumes by itself after every restart once started. QR_FORWARD_TEST=0 turns it off.
+        self._forward = None
+        self._forward_stop = threading.Event()
+        if os.environ.get("QR_FORWARD_TEST", "1") != "0":
+            threading.Thread(target=self._forward_loop, name="forward-test", daemon=True).start()
+
+    def forward_test(self):
+        with self.lock:
+            if self._forward is None:
+                from quantresearch.forward.runner import ForwardTest
+
+                self._forward = ForwardTest(self.p)
+            return self._forward
+
+    def _forward_loop(self) -> None:
+        from quantresearch.forward.runner import loop
+
+        loop(self.forward_test(), self._forward_stop)
 
     def catalogue_kick(self) -> None:
         """Start the catalogue worker on first use, and wake it when work is queued."""
