@@ -126,3 +126,27 @@ def test_an_open_trade_closes_at_17_00_new_york():
 def test_no_signal_after_17_00():
     F = FakeFrames([100, 100], [100.5, 100.5], start="2024-01-02 22:05")
     assert "skipped" in S.simulate(F, S.Signal("x", "2024-01-02", 1, "2024-01-02 22:05:00+00:00", 100.0, 99.2, "2r", None))
+
+
+def test_report_streak_and_drawdown():
+    from quantresearch.playbooks import report as R
+
+    r = np.array([2.0, -1, -1, -1, 0.0, -1, 2.0])
+    assert R.max_streak(r) == 3  # A breakeven (0R) ends a losing streak.
+    dd_r, dd_pct = R.drawdown(r)
+    assert dd_r == pytest.approx(4.0) and 1.9 < dd_pct < 2.1  # -4R from the +2R peak, about 2% at 0.5% risk.
+
+
+def test_report_folds_need_twenty_training_trades():
+    from quantresearch.playbooks import report as R
+
+    days = pd.bdate_range("2003-06-01", "2012-12-31")
+    rng = np.random.default_rng(1)
+    df = pd.DataFrame({"setup": "x", "day": days[::20], "side": 1, "fill_ts": days[::20], "r": rng.choice([-1.0, 2.0], len(days[::20])),
+                       "r_stress": -1.0, "exit_reason": "stop"})
+    gold = pd.DataFrame({"ts": pd.date_range("2003-05-05", "2012-12-31", freq="D", tz="UTC")})
+    gold["close_ts"] = gold["ts"] + pd.Timedelta(days=1)
+    gold["close"] = 400 * np.cumprod(1 + rng.normal(0, 0.01, len(gold)))
+    rep, oos = R.evaluate("ny_sweep_ifvg", df, gold, pd.Timestamp("2011-01-01", tz="UTC"), gold["close_ts"].iloc[-1], gold["ts"].iloc[0])
+    assert all(f["train_trades"] >= 20 for f in rep["folds"]) and rep["walk_forward"]["out_of_sample"]["trades"] > 0
+    assert rep["holdout_stats"]["trades"] == int((df["day"] >= "2011-01-01").sum())
