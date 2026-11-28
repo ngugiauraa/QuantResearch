@@ -108,7 +108,7 @@ test with more capital at risk on demo". It does not mean live trading.
 
 ## Start
 
-(Filled in at start: date and time UTC, commit hash, starting demo equity.)
+Started 2026-11-28T09:18:30.444094+00:00 UTC from commit 40534c879991, starting demo equity 1,000,000.00 XAUUSDm on ExnessKE-MT5Trial10.
 
 ## Result
 
