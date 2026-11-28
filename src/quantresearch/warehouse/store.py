@@ -73,6 +73,8 @@ def load_bars(tf: str, start=None, end=None, as_of=None, p: Paths | None = None)
     p = p or paths()
     if tf == "s1":
         return load_s1(start, end, as_of, p)
+    if tf == "w1":
+        return _weekly(start, end, as_of, p)
     start, end, as_of = _ts(start), _ts(end), _ts(as_of)
     base = p.bars / tf
     if not any(base.glob("year=*/month=*/bars.parquet")) if base.exists() else True:
@@ -97,6 +99,23 @@ def load_bars(tf: str, start=None, end=None, as_of=None, p: Paths | None = None)
         con.close()
     frame["ts"] = pd.to_datetime(frame["ts"], utc=True)
     return _finish(frame, tf, as_of)
+
+
+def _weekly(start, end, as_of, p: Paths) -> pd.DataFrame:
+    """Saturday-to-Saturday UTC weeks (one trading week each) aggregated from the warehouse's D1 bars, with the same rules as every other timeframe."""
+    from quantresearch.warehouse.build import BAR_COLUMNS, aggregate
+
+    start, end, as_of = _ts(start), _ts(end), _ts(as_of)
+    first = None if start is None else tfs.bucket(pd.Series([start]), "w1").iloc[0]
+    daily = load_bars("d1", first, end, p=p)
+    if daily.empty:
+        return daily
+    weeks = _finish(aggregate(daily[BAR_COLUMNS], "w1"), "w1", as_of)
+    if start is not None:
+        weeks = weeks[weeks["ts"] >= start]
+    if end is not None:
+        weeks = weeks[weeks["ts"] < end]
+    return weeks.reset_index(drop=True)
 
 
 def _finish(frame: pd.DataFrame, tf: str, as_of: pd.Timestamp | None) -> pd.DataFrame:

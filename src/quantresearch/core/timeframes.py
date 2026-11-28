@@ -11,8 +11,10 @@ FIXED_SECONDS = {
     "s1": 1, "m1": 60, "m5": 300, "m15": 900, "m30": 1800,
     "h1": 3600, "h4": 14400, "d1": 86400, "d1ny": 86400,
 }
-CALENDAR = {"mn1"}
-ALL = tuple(FIXED_SECONDS) + ("mn1",)
+CALENDAR = {"mn1", "w1"}
+ALL = tuple(FIXED_SECONDS) + ("w1", "mn1")
+# Weekly bars run Saturday 00:00 to Saturday 00:00 UTC, so each holds one Sunday-evening-to-Friday trading week and
+# closes about two hours after Friday's close. They are built from D1 bars on read (warehouse.store.load_bars).
 BUILT_FROM_M1 = ("m5", "m15", "m30", "h1", "h4", "d1", "d1ny", "mn1")
 
 
@@ -28,6 +30,8 @@ def close_times(ts: pd.Series, tf: str) -> pd.Series:
     if tf == "mn1":
         naive = ts.dt.tz_convert("UTC").dt.tz_localize(None)
         return (naive + pd.offsets.MonthBegin(1)).dt.tz_localize("UTC")
+    if tf == "w1":
+        return ts + pd.Timedelta(days=7)
     return ts + pd.Timedelta(seconds=FIXED_SECONDS[tf])
 
 
@@ -37,6 +41,9 @@ def bucket(ts: pd.Series, tf: str) -> pd.Series:
     if tf == "mn1":
         naive = ts.dt.tz_convert("UTC").dt.tz_localize(None)
         return naive.dt.to_period("M").dt.to_timestamp().dt.tz_localize("UTC")
+    if tf == "w1":
+        day = ts.dt.tz_convert("UTC").dt.floor("D")
+        return day - pd.to_timedelta((day.dt.day_of_week - 5) % 7, unit="D")  # Back to the Saturday on or before.
     if tf == "d1ny":
         # The trading day rolls at 17:00 New York. Each bar is labelled with the
         # UTC instant of that roll, so the timezone database handles DST.

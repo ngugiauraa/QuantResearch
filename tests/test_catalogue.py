@@ -16,13 +16,18 @@ from quantresearch.warehouse.store import synthetic_bars
 
 MANIFEST = Path(__file__).resolve().parents[1] / "docs" / "strategy_catalogue.json"
 CROSS = ("xagusd", "eurusd", "gbpusd", "usdjpy", "dollaridxusd", "usa500idxusd", "lightcmdusd")
-MACRO = ("DFII10", "DTWEXBGS", "T10YIE", "DFF", "DGS10", "DGS2", "VIXCLS", "GVZCLS", "DCOILWTICO", "COT_MM_NET", "CPI_SURPRISE")
-SIZES = {"m5": 9000, "m15": 7000, "h1": 5000, "h4": 3000, "d1": 1500, "mn1": 300}
+MACRO = ("DFII10", "DTWEXBGS", "T10YIE", "DFF", "DGS10", "DGS2", "VIXCLS", "GVZCLS", "DCOILWTICO", "COT_MM_NET", "CPI_SURPRISE",
+         "ALFRED_PAYEMS_SURP", "ALFRED_CORE_SURP", "ALFRED_PAYEMS_REV", "ALFRED_UNRATE_SURP", "COT_PROD_NET", "COT_SWAP_NET", "COT_OTHER_NET", "COT_OI")
+SIZES = {"m5": 9000, "m15": 7000, "h1": 5000, "h4": 3000, "d1": 1500, "w1": 900, "mn1": 300}
 
 
 def market(tf: str, n: int | None = None, seed: int = 7) -> pd.DataFrame:
     n = n or SIZES[tf]
-    if tf == "mn1":  # Synthetic bars have fixed steps only; re-stamp daily ones at month starts.
+    if tf == "w1":  # Weekly bars are calendar bars too: re-stamp daily ones at Saturday starts.
+        bars = synthetic_bars(n, "d1", start="2003-01-04", seed=seed, vol=0.02)
+        bars["ts"] = pd.date_range("2003-01-04", periods=n, freq="7D", tz="UTC")
+        bars["close_ts"] = bars["ts"] + pd.Timedelta(days=7)
+    elif tf == "mn1":  # Synthetic bars have fixed steps only; re-stamp daily ones at month starts.
         bars = synthetic_bars(n, "d1", start="1995-01-01", seed=seed, vol=0.04)
         bars["ts"] = pd.date_range("1995-01-01", periods=n, freq="MS", tz="UTC")
         if "close_ts" in bars:
@@ -41,7 +46,10 @@ def market(tf: str, n: int | None = None, seed: int = 7) -> pd.DataFrame:
     frame["cot_mm_z"] = np.sin(np.arange(n) / 50) * 3
     frame["vix"] = frame["m_VIXCLS"]
     frame["vix_chg5"] = frame["vix"].diff(5)
-    hours = (np.arange(n) * {"m5": 1 / 12, "m15": 0.25, "h1": 1, "h4": 4, "d1": 24, "mn1": 720}[tf]) % (24 * 42)
+    step = {"m5": 1 / 12, "m15": 0.25, "h1": 1, "h4": 4, "d1": 24, "w1": 168, "mn1": 720}[tf]
+    hours = (np.arange(n) * step) % (24 * 42)
+    for series in MACRO:  # Hours since each series' last release: a release every 30 days.
+        frame[f"hrs_{series}"] = (np.arange(n) * step) % (24 * 30)
     frame["hours_since_fomc"] = hours
     frame["hours_to_fomc"] = 24 * 42 - hours
     frame["hours_since_cpi"] = (hours * 0.7) % (24 * 30)
@@ -86,7 +94,7 @@ def test_parameters_are_fixed_and_documented(name):
     assert d.defaults and d.title and d.methodology and d.limitations
     for field in ("source", "logic", "entry", "exit", "stop", "family"):
         assert getattr(item, field), (name, field)
-    assert item.data and item.batch in (1, 2, 3, 4, 5)
+    assert item.data and item.batch in (1, 2, 3, 4, 5, 6, 7)
 
 
 @pytest.mark.parametrize("name", NAMES)

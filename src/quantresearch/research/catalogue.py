@@ -158,6 +158,8 @@ def research_frame(item, p: Paths, start=None, end=None, bars=None):
     events = ext.read_events(p)
     for series in item.macro:
         frame[f"m_{series}"] = pit.align_events(frame["close_ts"], events, series)
+        # Hours since that series was last published, for rules that act right after a release (batch 6 onwards).
+        frame[f"hrs_{series}"] = hours_since(frame["close_ts"], events.loc[events["series"] == series, "published_ts"])
     frame["hours_since_fomc"] = hours_since(frame["close_ts"], events.loc[events["series"] == "FOMC_DECISION", "event_ts"])
     return frame
 

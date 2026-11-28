@@ -2442,6 +2442,547 @@
    },
    "needs": [],
    "macro": []
+  },
+  {
+   "name": "cat_nfp_surprise_proxy_h1",
+   "title": "Payrolls surprise (first release vs its recent median)",
+   "family": "event",
+   "batch": 6,
+   "timeframe": "h1",
+   "source": "Event studies of metals and macro news: Elder, Miao and Ramchander, 'Impact of Macroeconomic News on Metal Futures', J. Banking & Finance 36(1), 2012, which finds gold falls on stronger-than-expected US activity and inflation news",
+   "logic": "Strong jobs data lifts expected rates and the dollar, which weighs on gold; the move is said to continue after the first minutes.",
+   "entry": "At the first H1 close after the 08:30 New York release: short if first-release payrolls change minus the median of the previous 12 first releases is above +75k; long if below -75k.",
+   "exit": "Exit after 24 bars.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD H1 bars (mid prices)",
+    "ALFRED first-release vintages (St. Louis Fed), surprise proxy = first release minus median of the previous 12 first releases"
+   ],
+   "missing_data": [],
+   "params": {
+    "threshold": 75.0,
+    "stop_atr": 2.0,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": [
+    "ALFRED_PAYEMS_SURP"
+   ]
+  },
+  {
+   "name": "cat_nfp_surprise_proxy_d1",
+   "title": "Payrolls surprise, daily hold",
+   "family": "event",
+   "batch": 6,
+   "timeframe": "d1",
+   "source": "Event studies of metals and macro news: Elder, Miao and Ramchander, 'Impact of Macroeconomic News on Metal Futures', J. Banking & Finance 36(1), 2012, which finds gold falls on stronger-than-expected US activity and inflation news",
+   "logic": "As the hourly rule, but measured over days, where costs matter less.",
+   "entry": "At the close of the release day: short if the payrolls surprise proxy is above +75k; long if below -75k.",
+   "exit": "Exit after 5 days.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)",
+    "ALFRED first-release vintages (St. Louis Fed), surprise proxy = first release minus median of the previous 12 first releases"
+   ],
+   "missing_data": [],
+   "params": {
+    "threshold": 75.0,
+    "stop_atr": 3.0,
+    "hold": 5
+   },
+   "needs": [],
+   "macro": [
+    "ALFRED_PAYEMS_SURP"
+   ]
+  },
+  {
+   "name": "cat_core_cpi_surprise_proxy_h1",
+   "title": "Core CPI surprise (first release vs its recent median)",
+   "family": "event",
+   "batch": 6,
+   "timeframe": "h1",
+   "source": "Event studies of metals and macro news: Elder, Miao and Ramchander, 'Impact of Macroeconomic News on Metal Futures', J. Banking & Finance 36(1), 2012, which finds gold falls on stronger-than-expected US activity and inflation news",
+   "logic": "A hot core inflation print raises expected policy rates, which the cited study finds weighs on gold in the short run.",
+   "entry": "At the first H1 close after the 08:30 New York CPI release: short if first-release core CPI m/m minus the median of the previous 12 first releases is above +0.1 points; long if below -0.1.",
+   "exit": "Exit after 24 bars.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD H1 bars (mid prices)",
+    "ALFRED first-release vintages (St. Louis Fed), surprise proxy = first release minus median of the previous 12 first releases"
+   ],
+   "missing_data": [],
+   "params": {
+    "threshold": 0.1,
+    "stop_atr": 2.0,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": [
+    "ALFRED_CORE_SURP"
+   ]
+  },
+  {
+   "name": "cat_payroll_revision_d1",
+   "title": "Payrolls revisions",
+   "family": "event",
+   "batch": 6,
+   "timeframe": "d1",
+   "source": "Own idea, using first-release vintages: revisions are information the headline number hides",
+   "logic": "Revisions show how the labour market really went; a large downward revision is a dovish surprise even when the headline is fine.",
+   "entry": "At the close of the release day: long if the previous month's change was revised down by more than 50k; short if revised up by more than 50k.",
+   "exit": "Exit after 10 days.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)",
+    "ALFRED first-release vintages (St. Louis Fed), surprise proxy = first release minus median of the previous 12 first releases"
+   ],
+   "missing_data": [],
+   "params": {
+    "threshold": 50.0,
+    "stop_atr": 3.0,
+    "hold": 10
+   },
+   "needs": [],
+   "macro": [
+    "ALFRED_PAYEMS_REV"
+   ]
+  },
+  {
+   "name": "cat_unrate_jump_d1",
+   "title": "Unemployment-rate jump",
+   "family": "event",
+   "batch": 6,
+   "timeframe": "d1",
+   "source": "Claudia Sahm's recession rule (2019) as the idea; this is a simpler first-release form, own parameters",
+   "logic": "A sudden rise in unemployment brings forward rate cuts, which supports gold.",
+   "entry": "At the close of the release day: long if the first-release unemployment rate is at least 0.2 points above the median of the previous 12 first releases. Long only.",
+   "exit": "Exit after 20 days.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)",
+    "ALFRED first-release vintages (St. Louis Fed), surprise proxy = first release minus median of the previous 12 first releases"
+   ],
+   "missing_data": [],
+   "params": {
+    "threshold": 0.2,
+    "stop_atr": 3.0,
+    "hold": 20,
+    "long_only": true
+   },
+   "needs": [],
+   "macro": [
+    "ALFRED_UNRATE_SURP"
+   ]
+  },
+  {
+   "name": "cat_cot_producer_z_d1",
+   "title": "Producer hedgers unusually light (COT)",
+   "family": "positioning",
+   "batch": 6,
+   "timeframe": "d1",
+   "source": "The 'commercials are the smart money' COT reading, e.g. Larry Williams, 'Trade Stocks and Commodities with the Insiders' (2005)",
+   "logic": "Producers hedge less when they expect higher prices; their positioning is said to lead.",
+   "entry": "Long when the z-score of producer/merchant net position over the last 520 daily bars (about two years) crosses above +1.5; short when it crosses below -1.5.",
+   "exit": "Exit after 20 days.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)",
+    "CFTC disaggregated Commitments of Traders, gold (COMEX), published Friday 15:30 New York for the Tuesday"
+   ],
+   "missing_data": [],
+   "params": {
+    "window": 520,
+    "z": 1.5,
+    "stop_atr": 3.0,
+    "hold": 20
+   },
+   "needs": [],
+   "macro": [
+    "COT_PROD_NET"
+   ]
+  },
+  {
+   "name": "cat_cot_swap_z_d1",
+   "title": "Swap dealers unusually long (COT)",
+   "family": "positioning",
+   "batch": 6,
+   "timeframe": "d1",
+   "source": "Same COT 'commercials' reading applied to swap dealers (bank hedging desks); own parameters",
+   "logic": "Swap dealers sit on the commercial side of the market; extreme moves in their book may reflect informed client flow.",
+   "entry": "Long when the swap-dealer net position z-score (520 daily bars) crosses above +1.5; short when it crosses below -1.5.",
+   "exit": "Exit after 20 days.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)",
+    "CFTC disaggregated Commitments of Traders, gold (COMEX), published Friday 15:30 New York for the Tuesday"
+   ],
+   "missing_data": [],
+   "params": {
+    "window": 520,
+    "z": 1.5,
+    "stop_atr": 3.0,
+    "hold": 20
+   },
+   "needs": [],
+   "macro": [
+    "COT_SWAP_NET"
+   ]
+  },
+  {
+   "name": "cat_cot_other_flow_d1",
+   "title": "Other-reportables flow with the trend (COT)",
+   "family": "positioning",
+   "batch": 6,
+   "timeframe": "d1",
+   "source": "Own idea using the 'other reportables' category of the disaggregated report",
+   "logic": "Trend moves backed by fresh positioning are more likely to last.",
+   "entry": "Long on the first day the other-reportables net position is higher than 20 daily bars earlier and the close is above SMA(50); short mirrored.",
+   "exit": "Exit when either condition no longer holds.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)",
+    "CFTC disaggregated Commitments of Traders, gold (COMEX), published Friday 15:30 New York for the Tuesday"
+   ],
+   "missing_data": [],
+   "params": {
+    "days": 20,
+    "sma": 50,
+    "stop_atr": 3.0
+   },
+   "needs": [],
+   "macro": [
+    "COT_OTHER_NET"
+   ]
+  },
+  {
+   "name": "cat_oi_breakout_d1",
+   "title": "Breakout confirmed by rising open interest",
+   "family": "positioning",
+   "batch": 6,
+   "timeframe": "d1",
+   "source": "Classic volume/open-interest confirmation, e.g. John Murphy, 'Technical Analysis of the Financial Markets' (1999), ch. 7",
+   "logic": "A breakout with rising open interest has new money behind it; one with falling open interest is short covering.",
+   "entry": "Long when the close is above the prior 20-day high and COT open interest is above its value 20 daily bars earlier; short when the close is below the prior 20-day low with open interest rising.",
+   "exit": "Exit long on a close below the prior 10-day low; exit short on a close above the prior 10-day high.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)",
+    "CFTC disaggregated Commitments of Traders, gold (COMEX), published Friday 15:30 New York for the Tuesday (open interest is weekly; daily futures open interest is not free)"
+   ],
+   "missing_data": [],
+   "params": {
+    "n": 20,
+    "exit_n": 10,
+    "oi_days": 20,
+    "stop_atr": 3.0
+   },
+   "needs": [],
+   "macro": [
+    "COT_OI"
+   ]
+  },
+  {
+   "name": "cat_macd_zero_d1",
+   "title": "MACD signal cross with zero-line filter (daily bars)",
+   "family": "trend_breakout",
+   "batch": 7,
+   "timeframe": "d1",
+   "source": "Slower version of cat_macd_zero_h4: Gerald Appel, 'Technical Analysis: Power Tools for Active Investors' (2005)",
+   "logic": "Buy MACD bullish crosses only when MACD is above zero, and sell bearish crosses only below zero.",
+   "entry": "Long when MACD(12,26) crosses above its 9-EMA signal while MACD > 0; short when it crosses below while MACD < 0. (on daily bars)",
+   "exit": "Exit long on any bearish signal cross; exit short on any bullish cross.",
+   "stop": "2.5 x the project's Wilder ATR(14) on the signal timeframe. On daily bars.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "fast": 12,
+    "slow": 26,
+    "signal": 9,
+    "stop_atr": 2.5
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_chandelier_d1",
+   "title": "20-bar breakout with chandelier exit (daily bars)",
+   "family": "trend_breakout",
+   "batch": 7,
+   "timeframe": "d1",
+   "source": "Slower version of cat_chandelier_h4: Chuck LeBeau's chandelier exit, as described in Alexander Elder, 'Come into My Trading Room' (2002)",
+   "logic": "Enter breakouts and let a trailing stop hung from the recent high decide the exit.",
+   "entry": "Long when the close is above the prior 20-bar high; short when below the prior 20-bar low. (on daily bars)",
+   "exit": "Exit long when the close is below the highest high of the last 22 bars - 3 x ATR(14); short mirrored.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe. On daily bars.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "entry_n": 20,
+    "trail_n": 22,
+    "trail_atr": 3.0,
+    "stop_atr": 3.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_bollinger_breakout_d1",
+   "title": "Bollinger band breakout (daily bars)",
+   "family": "trend_breakout",
+   "batch": 7,
+   "timeframe": "d1",
+   "source": "Slower version of cat_bollinger_breakout_h4: John Bollinger, 'Bollinger on Bollinger Bands' (2001)",
+   "logic": "A close outside the bands is treated as the start of a move.",
+   "entry": "Long when the close crosses above the upper band (SMA20 + 2 SD); short when it crosses below the lower band. (on daily bars)",
+   "exit": "Exit long when the close is below the 20-bar SMA; exit short when above it.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe. On daily bars.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "stop_atr": 2.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_ichimoku_d1",
+   "title": "Ichimoku cloud break with TK alignment (daily bars)",
+   "family": "trend_breakout",
+   "batch": 7,
+   "timeframe": "d1",
+   "source": "Slower version of cat_ichimoku_h4: Goichi Hosoda's Ichimoku Kinko Hyo; standard 9/26/52 settings",
+   "logic": "Price above the cloud with the fast line above the slow line is an uptrend; the reverse a downtrend.",
+   "entry": "Long on the first bar where the close is above both cloud spans (each shifted 26 bars) and Tenkan(9) > Kijun(26); short mirrored. (on daily bars)",
+   "exit": "Exit long when the close is below Kijun; exit short when above.",
+   "stop": "2.5 x the project's Wilder ATR(14) on the signal timeframe. On daily bars.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "stop_atr": 2.5
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_ema_cross_d1",
+   "title": "EMA 20/50 cross (daily bars)",
+   "family": "trend_breakout",
+   "batch": 7,
+   "timeframe": "d1",
+   "source": "Slower version of cat_ema_cross_h1: Common retail moving-average crossover system",
+   "logic": "Follow the hourly 20/50 EMA cross.",
+   "entry": "Long when EMA(20) crosses above EMA(50); short when it crosses below. (on daily bars)",
+   "exit": "Opposite cross reverses.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe. On daily bars.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "kind": "ema",
+    "fast": 20,
+    "slow": 50,
+    "stop_atr": 3.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_calm_breakout_d1",
+   "title": "Breakout from low ATR percentile (daily bars)",
+   "family": "volatility",
+   "batch": 7,
+   "timeframe": "d1",
+   "source": "Slower version of cat_calm_breakout_h1: Own idea (volatility-regime breakout filter)",
+   "logic": "Breakouts out of quiet markets are more likely to start real moves than breakouts in noisy ones.",
+   "entry": "If the previous bar's ATR(14) percentile over 500 bars was below 20%: long when the close is above the prior 24-bar high, short below the prior 24-bar low. (on daily bars)",
+   "exit": "Exit after 24 bars.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe. On daily bars.",
+   "data": [
+    "XAUUSD D1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "lookback": 500,
+    "calm": 0.2,
+    "n": 24,
+    "stop_atr": 2.0,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_macd_zero_w1",
+   "title": "MACD signal cross with zero-line filter (weekly bars)",
+   "family": "trend_breakout",
+   "batch": 7,
+   "timeframe": "w1",
+   "source": "Slower version of cat_macd_zero_h4: Gerald Appel, 'Technical Analysis: Power Tools for Active Investors' (2005)",
+   "logic": "Buy MACD bullish crosses only when MACD is above zero, and sell bearish crosses only below zero.",
+   "entry": "Long when MACD(12,26) crosses above its 9-EMA signal while MACD > 0; short when it crosses below while MACD < 0. (on weekly bars)",
+   "exit": "Exit long on any bearish signal cross; exit short on any bullish cross.",
+   "stop": "2.5 x the project's Wilder ATR(14) on the signal timeframe. On weekly bars.",
+   "data": [
+    "XAUUSD W1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "fast": 12,
+    "slow": 26,
+    "signal": 9,
+    "stop_atr": 2.5
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_chandelier_w1",
+   "title": "20-bar breakout with chandelier exit (weekly bars)",
+   "family": "trend_breakout",
+   "batch": 7,
+   "timeframe": "w1",
+   "source": "Slower version of cat_chandelier_h4: Chuck LeBeau's chandelier exit, as described in Alexander Elder, 'Come into My Trading Room' (2002)",
+   "logic": "Enter breakouts and let a trailing stop hung from the recent high decide the exit.",
+   "entry": "Long when the close is above the prior 20-bar high; short when below the prior 20-bar low. (on weekly bars)",
+   "exit": "Exit long when the close is below the highest high of the last 22 bars - 3 x ATR(14); short mirrored.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe. On weekly bars.",
+   "data": [
+    "XAUUSD W1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "entry_n": 20,
+    "trail_n": 22,
+    "trail_atr": 3.0,
+    "stop_atr": 3.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_bollinger_breakout_w1",
+   "title": "Bollinger band breakout (weekly bars)",
+   "family": "trend_breakout",
+   "batch": 7,
+   "timeframe": "w1",
+   "source": "Slower version of cat_bollinger_breakout_h4: John Bollinger, 'Bollinger on Bollinger Bands' (2001)",
+   "logic": "A close outside the bands is treated as the start of a move.",
+   "entry": "Long when the close crosses above the upper band (SMA20 + 2 SD); short when it crosses below the lower band. (on weekly bars)",
+   "exit": "Exit long when the close is below the 20-bar SMA; exit short when above it.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe. On weekly bars.",
+   "data": [
+    "XAUUSD W1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "stop_atr": 2.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_ichimoku_w1",
+   "title": "Ichimoku cloud break with TK alignment (weekly bars)",
+   "family": "trend_breakout",
+   "batch": 7,
+   "timeframe": "w1",
+   "source": "Slower version of cat_ichimoku_h4: Goichi Hosoda's Ichimoku Kinko Hyo; standard 9/26/52 settings",
+   "logic": "Price above the cloud with the fast line above the slow line is an uptrend; the reverse a downtrend.",
+   "entry": "Long on the first bar where the close is above both cloud spans (each shifted 26 bars) and Tenkan(9) > Kijun(26); short mirrored. (on weekly bars)",
+   "exit": "Exit long when the close is below Kijun; exit short when above.",
+   "stop": "2.5 x the project's Wilder ATR(14) on the signal timeframe. On weekly bars.",
+   "data": [
+    "XAUUSD W1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "stop_atr": 2.5
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_ema_cross_w1",
+   "title": "EMA 20/50 cross (weekly bars)",
+   "family": "trend_breakout",
+   "batch": 7,
+   "timeframe": "w1",
+   "source": "Slower version of cat_ema_cross_h1: Common retail moving-average crossover system",
+   "logic": "Follow the hourly 20/50 EMA cross.",
+   "entry": "Long when EMA(20) crosses above EMA(50); short when it crosses below. (on weekly bars)",
+   "exit": "Opposite cross reverses.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe. On weekly bars.",
+   "data": [
+    "XAUUSD W1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "kind": "ema",
+    "fast": 20,
+    "slow": 50,
+    "stop_atr": 3.0
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_calm_breakout_w1",
+   "title": "Breakout from low ATR percentile (weekly bars)",
+   "family": "volatility",
+   "batch": 7,
+   "timeframe": "w1",
+   "source": "Slower version of cat_calm_breakout_h1: Own idea (volatility-regime breakout filter)",
+   "logic": "Breakouts out of quiet markets are more likely to start real moves than breakouts in noisy ones.",
+   "entry": "If the previous bar's ATR(14) percentile over 500 bars was below 20%: long when the close is above the prior 24-bar high, short below the prior 24-bar low. (on weekly bars)",
+   "exit": "Exit after 24 bars.",
+   "stop": "2 x the project's Wilder ATR(14) on the signal timeframe. On weekly bars.",
+   "data": [
+    "XAUUSD W1 bars (mid prices)"
+   ],
+   "missing_data": [],
+   "params": {
+    "lookback": 500,
+    "calm": 0.2,
+    "n": 24,
+    "stop_atr": 2.0,
+    "hold": 24
+   },
+   "needs": [],
+   "macro": []
+  },
+  {
+   "name": "cat_real_yield_trend_w1",
+   "title": "Falling real-yield regime with gold uptrend (weekly bars)",
+   "family": "macro",
+   "batch": 7,
+   "timeframe": "w1",
+   "source": "Slower version of cat_real_yield_trend_d1: Erb and Harvey (2013); regime form is own idea",
+   "logic": "Hold gold only when both the macro tailwind and the price trend agree.",
+   "entry": "Long when DFII10 < its 120-day SMA and the close > SMA(50), on the first day both hold. Long only. (on weekly bars)",
+   "exit": "Exit when either condition fails.",
+   "stop": "3 x the project's Wilder ATR(14) on the signal timeframe. On weekly bars.",
+   "data": [
+    "XAUUSD W1 bars (mid prices)",
+    "FRED DFII10"
+   ],
+   "missing_data": [],
+   "params": {
+    "ry_sma": 120,
+    "stop_atr": 3.0
+   },
+   "needs": [],
+   "macro": [
+    "DFII10"
+   ]
   }
  ]
 }

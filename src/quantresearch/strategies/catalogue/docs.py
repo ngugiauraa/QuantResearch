@@ -15,7 +15,8 @@ from quantresearch.strategies.catalogue import CATALOGUE, ENTRIES
 
 DOCS = Path(__file__).resolve().parents[4] / "docs"
 FAMILIES = {"trend_breakout": "Trend and breakout", "mean_reversion": "Mean reversion", "volatility": "Volatility", "session": "Session and time of day",
-            "calendar": "Calendar", "event": "Scheduled events", "macro": "Macro", "cross_market": "Cross-market", "smc_ict": "SMC / ICT structure"}
+            "calendar": "Calendar", "event": "Scheduled events", "macro": "Macro", "cross_market": "Cross-market", "smc_ict": "SMC / ICT structure",
+            "positioning": "Positioning (COT)", "multi_market": "Multi-market portfolio"}
 
 
 def write(folder: Path = DOCS) -> tuple[Path, Path]:
