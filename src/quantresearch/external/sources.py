@@ -167,6 +167,16 @@ def parse_cot(raw_zip: bytes, market: str = "GOLD - COMMODITY EXCHANGE INC.") ->
         "COT_SWAP_NET": rows["Swap_Positions_Long_All"] - rows["Swap__Positions_Short_All"],
         "COT_OI": rows["Open_Interest_All"],
     }
+    # Extended 2026-11-28: the rest of the report, where the file has it, so positioning rules can use every category.
+    extra = {"COT_OTHER_NET": ("Other_Rept_Positions_Long_All", "Other_Rept_Positions_Short_All"),
+             "COT_NONREP_NET": ("NonRept_Positions_Long_All", "NonRept_Positions_Short_All"),
+             "COT_MM_LONG": ("M_Money_Positions_Long_All", None), "COT_MM_SHORT": ("M_Money_Positions_Short_All", None),
+             "COT_MM_SPREAD": ("M_Money_Positions_Spread_All", None), "COT_TRADERS_MM_LONG": ("Traders_M_Money_Long_All", None),
+             "COT_TRADERS_MM_SHORT": ("Traders_M_Money_Short_All", None), "COT_TRADERS_TOTAL": ("Traders_Tot_All", None),
+             "COT_CONC4_LONG": ("Conc_Gross_LE_4_TDR_Long_All", None), "COT_CONC4_SHORT": ("Conc_Gross_LE_4_TDR_Short_All", None)}
+    for name, (a_col, b_col) in extra.items():
+        if a_col in rows and (b_col is None or b_col in rows):
+            fields[name] = rows[a_col] - rows[b_col] if b_col else rows[a_col]
     return pd.concat([_events(name, event, published, values.astype(float).to_numpy(), "cftc", "published_schedule")
                       for name, values in fields.items()], ignore_index=True)
 

@@ -68,7 +68,8 @@ def test_cot_uses_friday_publication_not_tuesday_report_date():
     assert net.value == 60
     assert net.event_ts == pd.Timestamp("2024-01-02", tz="UTC")
     assert net.published_ts == pd.Timestamp("2024-01-05 20:30", tz="UTC")
-    assert set(frame.series) == {"COT_MM_NET", "COT_PROD_NET", "COT_SWAP_NET", "COT_OI"}
+    # The core four, plus the extended series whose columns the file has (here the managed-money legs).
+    assert set(frame.series) == {"COT_MM_NET", "COT_PROD_NET", "COT_SWAP_NET", "COT_OI", "COT_MM_LONG", "COT_MM_SHORT"}
 
 
 def test_gdelt_parser_and_empty_response():
