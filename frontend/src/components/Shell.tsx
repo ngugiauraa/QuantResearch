@@ -18,6 +18,7 @@ export const GROUPS: { title: string; icon: ReactNode; items: NavItem[] }[] = [
     { key: "research", label: "Quantitative Research", icon: <LineChart size={I} /> },
     { key: "catalogue", label: "Strategy Catalogue", icon: <Library size={I} /> },
     { key: "forward", label: "Forward Test", icon: <Activity size={I} /> },
+    { key: "playbooks", label: "My Playbooks", icon: <BookOpen size={I} /> },
     { key: "ml", label: "Machine Learning", icon: <Cpu size={I} /> },
     { key: "timemachine", label: "Time Machine", icon: <Clock size={I} /> },
   ] },

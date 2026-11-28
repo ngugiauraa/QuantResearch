@@ -453,6 +453,14 @@ def create_app(services: Services | None = None) -> FastAPI:
         svc.catalogue_kick()
         return ok({"started": started})
 
+    # ------------------------------------------------------------ personal playbooks (examples for confirmation)
+    @app.get("/api/playbooks/examples")
+    def playbook_examples():
+        path = svc.p.research / "playbooks" / "examples.json"
+        if not path.exists():
+            raise HTTPException(404, "No examples yet: run python -m quantresearch.playbooks.setups, then .examples")
+        return ok(json.loads(path.read_text(encoding="utf-8")))
+
     # ------------------------------------------------------------ forward test 001 (MT5 demo only)
     @app.get("/api/forward")
     def forward_status():
